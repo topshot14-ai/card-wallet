@@ -134,12 +134,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('refresh-listings', () => refreshListings());
   window.addEventListener('refresh-collection', () => refreshCollection());
 
+  // Service worker registration
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+
+  // Onboarding (first-run)
+  await initOnboarding();
+
+  // API key gate check
+  await checkApiKeyGate();
+
   // Event delegation for recent scans
   $('#recent-scans-list').addEventListener('click', (e) => {
     const item = e.target.closest('.recent-scan-item');
     if (item) {
       window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: item.dataset.id } }));
     }
+  });
+
+  // Sync conflict notification
+  window.addEventListener('sync-conflict', (e) => {
+    toast(e.detail.message, 'info', 4000);
   });
 
   // On sign-in, pull remote cards and refresh views
@@ -741,13 +757,13 @@ function showCardDetail(card) {
     await handleCompLookup();
   });
 
-  // Delete from detail
+  // Delete from detail (soft delete → trash)
   $('#detail-delete-btn').addEventListener('click', async () => {
     const { confirm: confirmFn } = await import('./ui.js');
-    const confirmed = await confirmFn('Delete Card', 'This cannot be undone.');
+    const confirmed = await confirmFn('Delete Card', 'Card will be moved to trash. You can restore it from Settings.');
     if (confirmed) {
-      await db.deleteCard(card.id);
-      toast('Card deleted', 'success');
+      await db.softDeleteCard(card.id);
+      toast('Card moved to trash', 'success');
       await refreshListings();
       await refreshCollection();
       await loadRecentScans();
@@ -927,6 +943,66 @@ function initEbaySettings() {
     });
   }
 }
+
+// ===== Onboarding (First Run) =====
+
+async function initOnboarding() {
+  const hasLaunched = localStorage.getItem('cw_hasLaunched');
+  if (hasLaunched) return;
+
+  const overlay = $('#onboarding-overlay');
+  overlay.classList.remove('hidden');
+
+  $('#onboarding-setup-btn').addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    localStorage.setItem('cw_hasLaunched', 'true');
+    // Navigate to settings
+    showView('view-settings');
+    // Focus the API key input after a tick
+    setTimeout(() => {
+      const input = $('#setting-api-key');
+      if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth' }); }
+    }, 300);
+  });
+
+  $('#onboarding-skip-btn').addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    localStorage.setItem('cw_hasLaunched', 'true');
+  });
+}
+
+// ===== API Key Gate =====
+
+async function checkApiKeyGate() {
+  let apiKey = await db.getSetting('apiKey');
+  if (!apiKey) {
+    try { apiKey = localStorage.getItem('cw_apiKey'); } catch {}
+  }
+
+  const gate = $('#api-key-gate');
+  const scanArea = document.querySelector('.scan-area');
+
+  if (!apiKey) {
+    gate.classList.remove('hidden');
+    if (scanArea) scanArea.style.opacity = '0.4';
+    if (scanArea) scanArea.style.pointerEvents = 'none';
+  } else {
+    gate.classList.add('hidden');
+    if (scanArea) scanArea.style.opacity = '';
+    if (scanArea) scanArea.style.pointerEvents = '';
+  }
+
+  $('#gate-go-settings').addEventListener('click', () => {
+    showView('view-settings');
+    setTimeout(() => {
+      const input = $('#setting-api-key');
+      if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth' }); }
+    }, 300);
+  });
+}
+
+// Re-check gate when returning to scan view
+window.addEventListener('apikey-changed', () => checkApiKeyGate());
 
 function escapeHtml(str) {
   const div = document.createElement('div');

@@ -19,6 +19,7 @@ export async function initSettings() {
     // Backup to localStorage (more persistent than IndexedDB in some browsers)
     try { localStorage.setItem('cw_apiKey', key); } catch {}
     toast('API key saved', 'success');
+    window.dispatchEvent(new CustomEvent('apikey-changed'));
   });
 
   toggleBtn.addEventListener('click', () => {
@@ -168,6 +169,9 @@ export async function initSettings() {
   // Set initial account state — auth listener will switch to signed-in if already authed
   showAccountState('signed-out');
 
+  // Trash management
+  initTrash();
+
   await refreshStats();
 }
 
@@ -205,7 +209,7 @@ async function loadSettings() {
 }
 
 export async function refreshStats() {
-  const all = await db.getAllCards();
+  const all = await db.getAllCards(); // excludes deleted by default
   const listings = all.filter(c => c.mode === 'listing');
   const collection = all.filter(c => c.mode === 'collection');
 
@@ -220,4 +224,103 @@ export async function getDefaults() {
     condition: await db.getSetting('defaultCondition') || 'Near Mint or Better',
     startPrice: await db.getSetting('defaultPrice') || 0.99
   };
+}
+
+// ===== Trash (Soft Delete) =====
+
+function initTrash() {
+  const restoreBtn = document.getElementById('btn-restore-all-trash');
+  const emptyBtn = document.getElementById('btn-empty-trash');
+
+  if (restoreBtn) {
+    restoreBtn.addEventListener('click', async () => {
+      const all = await db.getAllCards(true);
+      const trashed = all.filter(c => c.status === 'deleted');
+      for (const card of trashed) {
+        card.status = 'pending';
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+      }
+      toast(`${trashed.length} card(s) restored`, 'success');
+      await refreshTrash();
+      await refreshStats();
+      window.dispatchEvent(new CustomEvent('data-imported'));
+    });
+  }
+
+  if (emptyBtn) {
+    emptyBtn.addEventListener('click', async () => {
+      const confirmed = await confirm('Empty Trash', 'Permanently delete all trashed cards? This cannot be undone.');
+      if (!confirmed) return;
+      const all = await db.getAllCards(true);
+      const trashed = all.filter(c => c.status === 'deleted');
+      const ids = trashed.map(c => c.id);
+      if (ids.length > 0) {
+        await db.deleteCards(ids);
+        toast(`${ids.length} card(s) permanently deleted`, 'success');
+        await refreshTrash();
+        await refreshStats();
+      }
+    });
+  }
+
+  refreshTrash();
+
+  // Listen for trash changes
+  window.addEventListener('trash-changed', () => refreshTrash());
+}
+
+export async function refreshTrash() {
+  const all = await db.getAllCards(true); // include deleted
+  const trashed = all.filter(c => c.status === 'deleted');
+
+  const emptyMsg = document.getElementById('trash-empty-msg');
+  const listEl = document.getElementById('trash-list');
+  const actionsEl = document.getElementById('trash-actions');
+
+  if (!listEl) return;
+
+  if (trashed.length === 0) {
+    if (emptyMsg) emptyMsg.classList.remove('hidden');
+    listEl.innerHTML = '';
+    if (actionsEl) actionsEl.classList.add('hidden');
+    return;
+  }
+
+  if (emptyMsg) emptyMsg.classList.add('hidden');
+  if (actionsEl) actionsEl.classList.remove('hidden');
+
+  listEl.innerHTML = trashed.map(card => {
+    const name = card.player || card.ebayTitle || 'Unknown Card';
+    const date = card.lastModified ? new Date(card.lastModified).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    return `
+      <div class="trash-item" data-id="${card.id}">
+        <span class="trash-item-name">${escapeHtml(name)}</span>
+        <span class="trash-item-date">${date}</span>
+        <button class="btn btn-sm btn-secondary trash-restore-btn" data-id="${card.id}">Restore</button>
+      </div>
+    `;
+  }).join('');
+
+  // Restore individual cards
+  listEl.querySelectorAll('.trash-restore-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const card = await db.getCard(btn.dataset.id);
+      if (card) {
+        card.status = 'pending';
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+        toast('Card restored', 'success');
+        await refreshTrash();
+        await refreshStats();
+        window.dispatchEvent(new CustomEvent('data-imported'));
+      }
+    });
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }

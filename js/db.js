@@ -107,15 +107,34 @@ export async function deleteCards(ids) {
   window.dispatchEvent(new CustomEvent('cards-deleted', { detail: { ids } }));
 }
 
-export async function getAllCards() {
+export async function getAllCards(includeDeleted = false) {
   const store = await tx(CARDS_STORE);
-  return promisifyRequest(store.getAll());
+  const all = await promisifyRequest(store.getAll());
+  return includeDeleted ? all : all.filter(c => c.status !== 'deleted');
 }
 
 export async function getCardsByMode(mode) {
   const store = await tx(CARDS_STORE);
   const index = store.index('mode');
-  return promisifyRequest(index.getAll(mode));
+  const cards = await promisifyRequest(index.getAll(mode));
+  return cards.filter(c => c.status !== 'deleted');
+}
+
+/** Soft-delete: mark as deleted instead of removing from DB */
+export async function softDeleteCard(id) {
+  const card = await getCard(id);
+  if (!card) return;
+  card.status = 'deleted';
+  card.lastModified = new Date().toISOString();
+  await saveCard(card);
+  window.dispatchEvent(new CustomEvent('trash-changed'));
+  return card;
+}
+
+export async function softDeleteCards(ids) {
+  for (const id of ids) {
+    await softDeleteCard(id);
+  }
 }
 
 export async function getCardCount() {

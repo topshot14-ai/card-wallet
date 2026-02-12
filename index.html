@@ -6,10 +6,39 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Card Wallet</title>
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="css/styles.css">
   <script>try{if(localStorage.getItem('cw_darkMode')==='true')document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
+  <!-- Skip Navigation -->
+  <a href="#view-scan" class="skip-nav" id="skip-nav">Skip to content</a>
+
+  <!-- Onboarding Overlay (first-run) -->
+  <div id="onboarding-overlay" class="onboarding-overlay hidden">
+    <div class="onboarding-card">
+      <div class="onboarding-icon">&#127183;</div>
+      <h2>Welcome to Card Wallet</h2>
+      <p>Scan trading cards with AI, manage your collection, and list on eBay — all from your phone.</p>
+      <div class="onboarding-steps">
+        <div class="onboarding-step">
+          <span class="step-number">1</span>
+          <span>Add your Claude API key in Settings</span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-number">2</span>
+          <span>Snap a photo of any trading card</span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-number">3</span>
+          <span>AI identifies it &mdash; review, save, sell</span>
+        </div>
+      </div>
+      <button id="onboarding-setup-btn" class="btn btn-primary" style="width:100%;margin-top:16px">Set Up API Key</button>
+      <button id="onboarding-skip-btn" class="btn btn-secondary" style="width:100%;margin-top:8px">I'll do this later</button>
+    </div>
+  </div>
+
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="loading-overlay hidden">
     <div class="loading-spinner"></div>
@@ -29,11 +58,19 @@
   </div>
 
   <!-- ===== SCAN VIEW ===== -->
-  <div id="view-scan" class="view active">
+  <div id="view-scan" class="view active" role="main" aria-label="Scan card">
     <header class="view-header">
       <h1>Scan Card</h1>
     </header>
     <div class="view-content scan-content">
+      <!-- API Key Gate Banner -->
+      <div id="api-key-gate" class="api-key-gate hidden">
+        <div class="gate-icon">&#128273;</div>
+        <p><strong>API key required</strong></p>
+        <p>Add your Claude API key to start scanning cards.</p>
+        <button id="gate-go-settings" class="btn btn-primary btn-sm">Go to Settings</button>
+      </div>
+
       <!-- Mode Toggle -->
       <div class="mode-toggle">
         <button id="mode-listing" class="mode-btn active" data-mode="listing">List It</button>
@@ -52,7 +89,7 @@
               <span>Front</span>
             </label>
             <img id="scan-preview-front" class="scan-preview hidden" alt="Front preview">
-            <button id="scan-clear-front" class="scan-clear-btn hidden">&times;</button>
+            <button id="scan-clear-front" class="scan-clear-btn hidden" aria-label="Remove front photo">&times;</button>
           </div>
           <div class="scan-slot" id="scan-slot-back">
             <label class="scan-btn scan-btn-back" for="camera-input-back">
@@ -63,7 +100,7 @@
               <span>Back (optional)</span>
             </label>
             <img id="scan-preview-back" class="scan-preview hidden" alt="Back preview">
-            <button id="scan-clear-back" class="scan-clear-btn hidden">&times;</button>
+            <button id="scan-clear-back" class="scan-clear-btn hidden" aria-label="Remove back photo">&times;</button>
           </div>
         </div>
         <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden">
@@ -82,9 +119,9 @@
   </div>
 
   <!-- ===== CARD REVIEW VIEW ===== -->
-  <div id="view-review" class="view">
+  <div id="view-review" class="view" role="main" aria-label="Review card">
     <header class="view-header">
-      <button id="review-back" class="header-btn">&#8592; Back</button>
+      <button id="review-back" class="header-btn" aria-label="Go back">&#8592; Back</button>
       <h1>Review Card</h1>
       <button id="review-save" class="header-btn primary">Save</button>
     </header>
@@ -262,12 +299,13 @@
   </div>
 
   <!-- ===== LISTINGS VIEW ===== -->
-  <div id="view-listings" class="view">
+  <div id="view-listings" class="view" role="main" aria-label="Listings">
     <header class="view-header">
       <h1>Listings</h1>
-      <button id="btn-export-csv" class="header-btn primary">Export CSV</button>
+      <button id="btn-export-csv" class="header-btn primary" aria-label="Export listings as CSV">Export CSV</button>
     </header>
     <div class="view-content">
+      <input type="search" id="listings-search" placeholder="Search listings..." class="search-input" aria-label="Search listings">
       <div class="listings-filters" id="listings-status-filters">
         <button class="pill active" data-status="all" data-label="All">All</button>
         <button class="pill" data-status="pending" data-label="Pending">Pending</button>
@@ -291,7 +329,7 @@
   </div>
 
   <!-- ===== COLLECTION VIEW ===== -->
-  <div id="view-collection" class="view">
+  <div id="view-collection" class="view" role="main" aria-label="Collection">
     <header class="view-header">
       <h1>Collection</h1>
       <span id="collection-count" class="header-badge">0</span>
@@ -324,9 +362,9 @@
   </div>
 
   <!-- ===== CARD DETAIL VIEW ===== -->
-  <div id="view-detail" class="view">
+  <div id="view-detail" class="view" role="main" aria-label="Card details">
     <header class="view-header">
-      <button id="detail-back" class="header-btn">&#8592; Back</button>
+      <button id="detail-back" class="header-btn" aria-label="Go back">&#8592; Back</button>
       <h1>Card Details</h1>
       <button id="detail-edit" class="header-btn">Edit</button>
     </header>
@@ -336,7 +374,7 @@
   </div>
 
   <!-- ===== SETTINGS VIEW ===== -->
-  <div id="view-settings" class="view">
+  <div id="view-settings" class="view" role="main" aria-label="Settings">
     <header class="view-header">
       <h1>Settings</h1>
     </header>
@@ -468,6 +506,17 @@
         </div>
       </div>
 
+      <!-- Trash / Recently Deleted -->
+      <div class="settings-section">
+        <h3>Recently Deleted</h3>
+        <p id="trash-empty-msg" class="trash-empty-msg">No deleted cards.</p>
+        <div id="trash-list" class="trash-list"></div>
+        <div id="trash-actions" class="trash-actions hidden">
+          <button id="btn-restore-all-trash" class="btn btn-secondary btn-sm">Restore All</button>
+          <button id="btn-empty-trash" class="btn btn-danger btn-sm">Empty Trash</button>
+        </div>
+      </div>
+
       <div class="settings-section">
         <h3>Stats</h3>
         <div id="settings-stats" class="stats-grid">
@@ -486,34 +535,34 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v3.0</p>
+      <p class="app-version">Card Wallet v3.1</p>
     </div>
   </div>
 
   <!-- ===== BOTTOM TAB BAR ===== -->
-  <nav class="tab-bar">
-    <button class="tab active" data-view="scan">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+  <nav class="tab-bar" role="navigation" aria-label="Main navigation">
+    <button class="tab active" data-view="scan" aria-label="Scan card">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
         <circle cx="12" cy="13" r="4"/>
       </svg>
       <span>Scan</span>
     </button>
-    <button class="tab" data-view="listings">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="tab" data-view="listings" aria-label="View listings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
         <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
       </svg>
       <span>Listings</span>
     </button>
-    <button class="tab" data-view="collection">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="tab" data-view="collection" aria-label="View collection">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
         <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
       </svg>
       <span>Collection</span>
     </button>
-    <button class="tab" data-view="settings">
+    <button class="tab" data-view="settings" aria-label="Settings">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>

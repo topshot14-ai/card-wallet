@@ -9,6 +9,8 @@ let filteredCards = [];
 let currentFilter = 'all';
 let currentSort = 'dateAdded-desc';
 let searchQuery = '';
+const COLLECTION_PAGE_SIZE = 50;
+let collectionShown = COLLECTION_PAGE_SIZE;
 
 export async function initCollection() {
   // Search
@@ -47,6 +49,7 @@ export async function initCollection() {
 export async function refreshCollection() {
   allCards = await db.getCardsByMode('collection');
   $('#collection-count').textContent = allCards.length;
+  collectionShown = COLLECTION_PAGE_SIZE;
   applyFilters();
 }
 
@@ -102,7 +105,9 @@ function renderGrid() {
     return;
   }
 
-  grid.innerHTML = filteredCards.map(card => {
+  const visible = filteredCards.slice(0, collectionShown);
+
+  grid.innerHTML = visible.map(card => {
     let valueBadge = '';
     if (card.estimatedValueLow && card.estimatedValueHigh) {
       valueBadge = `<span class="card-tile-value">$${Number(card.estimatedValueLow).toFixed(0)}–$${Number(card.estimatedValueHigh).toFixed(0)}</span>`;
@@ -124,6 +129,16 @@ function renderGrid() {
     </div>
   `;
   }).join('');
+
+  // Load more button
+  if (filteredCards.length > collectionShown) {
+    const remaining = filteredCards.length - collectionShown;
+    grid.innerHTML += `<div class="load-more-sentinel" style="grid-column: 1/-1"><button class="btn btn-secondary btn-sm" id="btn-collection-load-more">Show More (${remaining} remaining)</button></div>`;
+    document.getElementById('btn-collection-load-more').addEventListener('click', () => {
+      collectionShown += COLLECTION_PAGE_SIZE;
+      renderGrid();
+    });
+  }
 }
 
 function escapeHtml(str) {

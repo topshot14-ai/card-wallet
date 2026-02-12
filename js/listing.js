@@ -3,10 +3,14 @@
 import * as db from './db.js';
 import { toast, confirm, showView, $ } from './ui.js';
 import { cardDisplayName, cardDetailLine } from './card-model.js';
+// Note: db.softDeleteCard and db.softDeleteCards accessed via db.* namespace
 
 let listings = [];
 let selectedIds = new Set();
 let statusFilter = 'all'; // 'all', 'pending', 'listed', 'sold', 'unsold'
+let listingsSearchQuery = '';
+const LISTINGS_PAGE_SIZE = 50;
+let listingsShown = LISTINGS_PAGE_SIZE;
 
 export async function initListings() {
   await refreshListings();
@@ -16,6 +20,15 @@ export async function initListings() {
   $('#listings-select-all').addEventListener('click', toggleSelectAll);
   $('#btn-delete-selected').addEventListener('click', deleteSelected);
   $('#btn-move-to-collection').addEventListener('click', moveSelectedToCollection);
+
+  // Search input
+  const searchInput = document.getElementById('listings-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      listingsSearchQuery = e.target.value.trim().toLowerCase();
+      render();
+    });
+  }
 
   // Status filter pills — event delegation
   const filterContainer = $('#listings-status-filters');
@@ -54,15 +67,15 @@ export async function initListings() {
       return;
     }
 
-    // Delete button
+    // Delete button (soft delete → trash)
     const delBtn = e.target.closest('.listing-delete-btn');
     if (delBtn) {
       e.stopPropagation();
-      const confirmed = await confirm('Delete Card', 'Remove this listing?');
+      const confirmed = await confirm('Delete Card', 'Move this listing to trash?');
       if (confirmed) {
-        await db.deleteCard(delBtn.dataset.id);
+        await db.softDeleteCard(delBtn.dataset.id);
         await refreshListings();
-        toast('Listing removed', 'success');
+        toast('Listing moved to trash', 'success');
       }
       return;
     }
@@ -81,12 +94,23 @@ export async function refreshListings() {
   listings = await db.getCardsByMode('listing');
   listings.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
   selectedIds.clear();
+  listingsShown = LISTINGS_PAGE_SIZE;
   render();
 }
 
 function getFilteredListings() {
-  if (statusFilter === 'all') return listings;
-  return listings.filter(c => c.status === statusFilter);
+  let filtered = listings;
+  if (statusFilter !== 'all') {
+    filtered = filtered.filter(c => c.status === statusFilter);
+  }
+  if (listingsSearchQuery) {
+    filtered = filtered.filter(c => {
+      const searchable = [c.player, c.team, c.brand, c.setName, c.year, c.parallel, c.cardNumber, c.ebayTitle, c.notes]
+        .filter(Boolean).join(' ').toLowerCase();
+      return searchable.includes(listingsSearchQuery);
+    });
+  }
+  return filtered;
 }
 
 function render() {
@@ -110,13 +134,15 @@ function render() {
     return;
   }
 
-  container.innerHTML = filtered.map(card => {
+  const visible = filtered.slice(0, listingsShown);
+
+  container.innerHTML = visible.map(card => {
     const statusBadge = getStatusBadge(card.status);
     return `
     <div class="listing-item" data-id="${card.id}">
       <input type="checkbox" class="listing-checkbox" data-id="${card.id}" ${selectedIds.has(card.id) ? 'checked' : ''}>
       ${card.imageThumbnail
-        ? `<img src="${card.imageThumbnail}" alt="Card">`
+        ? `<img src="${card.imageThumbnail}" alt="Card" loading="lazy">`
         : '<div class="no-image-placeholder">No img</div>'}
       <div class="listing-info">
         <div class="title">${escapeHtml(card.ebayTitle || cardDisplayName(card))}</div>
@@ -124,12 +150,22 @@ function render() {
       </div>
       <div class="listing-price" data-id="${card.id}" title="Tap to edit">${card.startPrice ? '$' + Number(card.startPrice).toFixed(2) : ''}</div>
       <div class="listing-actions">
-        <button class="listing-action-btn listing-view-btn" data-id="${card.id}" title="View">&#128065;</button>
-        <button class="listing-action-btn listing-delete-btn" data-id="${card.id}" title="Delete">&#128465;</button>
+        <button class="listing-action-btn listing-view-btn" data-id="${card.id}" title="View" aria-label="View card">&#128065;</button>
+        <button class="listing-action-btn listing-delete-btn" data-id="${card.id}" title="Delete" aria-label="Delete card">&#128465;</button>
       </div>
     </div>
   `;
   }).join('');
+
+  // Load more button
+  if (filtered.length > listingsShown) {
+    const remaining = filtered.length - listingsShown;
+    container.innerHTML += `<div class="load-more-sentinel"><button class="btn btn-secondary btn-sm" id="btn-listings-load-more">Show More (${remaining} remaining)</button></div>`;
+    document.getElementById('btn-listings-load-more').addEventListener('click', () => {
+      listingsShown += LISTINGS_PAGE_SIZE;
+      render();
+    });
+  }
 
   updateBulkButtons();
 }
@@ -185,12 +221,12 @@ function updateBulkButtons() {
 }
 
 async function deleteSelected() {
-  const confirmed = await confirm('Delete Selected', `Remove ${selectedIds.size} listing(s)?`);
+  const confirmed = await confirm('Delete Selected', `Move ${selectedIds.size} listing(s) to trash?`);
   if (confirmed) {
     const count = selectedIds.size;
-    await db.deleteCards([...selectedIds]);
+    await db.softDeleteCards([...selectedIds]);
     await refreshListings();
-    toast(`${count} listing(s) removed`, 'success');
+    toast(`${count} listing(s) moved to trash`, 'success');
   }
 }
 

@@ -78,6 +78,9 @@ export async function pullAllCards() {
     const localCards = await getAllCards();
     const localMap = new Map(localCards.map(c => [c.id, c]));
 
+    let pullCount = 0;
+    let conflictCount = 0;
+
     for (const doc of snapshot.docs) {
       const remoteCard = firestoreDocToCard(doc.data());
       const localCard = localMap.get(remoteCard.id);
@@ -85,6 +88,7 @@ export async function pullAllCards() {
       if (!localCard) {
         // Card exists remotely but not locally — pull it
         await saveCardLocal(remoteCard);
+        pullCount++;
       } else {
         // Both exist — newer wins
         const remoteTime = new Date(remoteCard.lastModified || remoteCard.dateAdded || 0).getTime();
@@ -97,8 +101,16 @@ export async function pullAllCards() {
           if (localCard.imageBlob) merged.imageBlob = localCard.imageBlob;
           if (localCard.imageBackBlob) merged.imageBackBlob = localCard.imageBackBlob;
           await saveCardLocal(merged);
+          conflictCount++;
         }
       }
+    }
+
+    // Notify about sync results
+    if (conflictCount > 0) {
+      window.dispatchEvent(new CustomEvent('sync-conflict', {
+        detail: { message: `${conflictCount} card(s) updated from cloud (remote was newer)` }
+      }));
     }
 
     // Push local-only cards to remote
