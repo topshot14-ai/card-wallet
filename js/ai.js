@@ -43,7 +43,11 @@ Important rules:
  * @param {string|null} backBase64 - data URI for back image (optional)
  */
 export async function identifyCard(frontBase64, backBase64 = null) {
-  const apiKey = await getSetting('apiKey');
+  let apiKey = await getSetting('apiKey');
+  // Fall back to localStorage if IndexedDB lost the key
+  if (!apiKey) {
+    try { apiKey = localStorage.getItem('cw_apiKey'); } catch {}
+  }
   if (!apiKey) {
     throw new Error('API key not set. Please add your Claude API key in Settings.');
   }

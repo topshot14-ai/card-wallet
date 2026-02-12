@@ -14,7 +14,10 @@ export async function initSettings() {
   const toggleBtn = $('#btn-toggle-api-key');
 
   apiKeyInput.addEventListener('change', async () => {
-    await db.setSetting('apiKey', apiKeyInput.value.trim());
+    const key = apiKeyInput.value.trim();
+    await db.setSetting('apiKey', key);
+    // Backup to localStorage (more persistent than IndexedDB in some browsers)
+    try { localStorage.setItem('cw_apiKey', key); } catch {}
     toast('API key saved', 'success');
   });
 
@@ -180,7 +183,12 @@ function showAccountState(state) {
 }
 
 async function loadSettings() {
-  const apiKey = await db.getSetting('apiKey');
+  let apiKey = await db.getSetting('apiKey');
+  // Fall back to localStorage if IndexedDB lost the key
+  if (!apiKey) {
+    try { apiKey = localStorage.getItem('cw_apiKey'); } catch {}
+    if (apiKey) await db.setSetting('apiKey', apiKey); // restore to IndexedDB
+  }
   if (apiKey) $('#setting-api-key').value = apiKey;
 
   const model = await db.getSetting('model');
