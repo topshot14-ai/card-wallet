@@ -12,6 +12,8 @@ import { initSettings, refreshStats, getDefaults } from './settings.js';
 import { initFirebase } from './firebase.js';
 import { initAuth } from './auth.js';
 import { initSyncListeners, pullAllCards } from './sync.js';
+import { initEbayAuth, isEbayConnected, updateEbayUI } from './ebay-auth.js';
+import { initEbayListing, listCardOnEbay } from './ebay-listing.js';
 
 let currentMode = 'listing';
 let currentCard = null; // Card being reviewed
@@ -108,6 +110,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initCollection();
   await initSettings();
   await loadRecentScans();
+
+  // eBay integration
+  initEbaySettings();
+  await initEbayAuth();
+  initEbayListing();
+
+  // Update eBay UI on auth changes
+  window.addEventListener('ebay-auth-changed', () => updateEbayUI());
+  window.addEventListener('refresh-listings', () => refreshListings());
 
   // On sign-in, pull remote cards and refresh views
   window.addEventListener('auth-state-changed', async (e) => {
@@ -526,6 +537,10 @@ function showCardDetail(card) {
     fields.push(['Comps', comp.join(' | ')]);
   }
 
+  if (card.ebayListingId) {
+    fields.push(['eBay', `<a href="${escapeHtml(card.ebayListingUrl || '')}" target="_blank">Item #${escapeHtml(card.ebayListingId)}</a>`]);
+  }
+
   if (card.notes) {
     fields.push(['Notes', card.notes]);
   }
@@ -548,15 +563,36 @@ function showCardDetail(card) {
         .map(([label, val]) => `
           <div class="detail-field">
             <span class="label">${label}</span>
-            <span class="value">${escapeHtml(String(val))}</span>
+            <span class="value">${label === 'eBay' ? val : escapeHtml(String(val))}</span>
           </div>
         `).join('')}
     </div>
+    ${card.ebayListingId
+      ? `<div class="ebay-listed-badge">Listed on eBay — <a href="${escapeHtml(card.ebayListingUrl || '')}" target="_blank">#${escapeHtml(card.ebayListingId)}</a></div>`
+      : ''}
     <div class="detail-actions">
+      ${card.mode === 'listing' && !card.ebayListingId
+        ? '<button class="btn btn-ebay ebay-only hidden" id="detail-ebay-btn">List on eBay</button>'
+        : ''}
       <button class="btn btn-secondary" id="detail-comp-btn">Look Up Comps</button>
       <button class="btn btn-danger" id="detail-delete-btn">Delete Card</button>
     </div>
   `;
+
+  // eBay listing from detail
+  const ebayBtn = document.getElementById('detail-ebay-btn');
+  if (ebayBtn) {
+    // Show/hide based on eBay connection status
+    isEbayConnected().then(connected => {
+      if (connected) ebayBtn.classList.remove('hidden');
+    });
+    ebayBtn.addEventListener('click', async () => {
+      await listCardOnEbay(card);
+      // Refresh detail view after listing
+      const updatedCard = await db.getCard(card.id);
+      if (updatedCard) showCardDetail(updatedCard);
+    });
+  }
 
   // Comp lookup from detail
   $('#detail-comp-btn').addEventListener('click', async () => {
@@ -591,6 +627,32 @@ function editDetailCard() {
     populateReviewForm(card);
     showView('view-review');
   });
+}
+
+// ===== eBay Settings =====
+
+function initEbaySettings() {
+  const workerUrlInput = $('#setting-ebay-worker-url');
+  const clientIdInput = $('#setting-ebay-client-id');
+
+  if (workerUrlInput) {
+    // Load saved values
+    db.getSetting('ebayWorkerUrl').then(val => {
+      if (val) workerUrlInput.value = val;
+    });
+    workerUrlInput.addEventListener('change', () => {
+      db.setSetting('ebayWorkerUrl', workerUrlInput.value.trim());
+    });
+  }
+
+  if (clientIdInput) {
+    db.getSetting('ebayClientId').then(val => {
+      if (val) clientIdInput.value = val;
+    });
+    clientIdInput.addEventListener('change', () => {
+      db.setSetting('ebayClientId', clientIdInput.value.trim());
+    });
+  }
 }
 
 function escapeHtml(str) {

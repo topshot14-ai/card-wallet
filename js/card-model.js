@@ -46,6 +46,8 @@ export function createCard(data = {}) {
     lastModified: data.lastModified || new Date().toISOString(),
     estimatedValueLow: data.estimatedValueLow || null,
     estimatedValueHigh: data.estimatedValueHigh || null,
+    ebayListingId: data.ebayListingId || null,
+    ebayListingUrl: data.ebayListingUrl || null,
     notes: data.notes || ''
   };
 }

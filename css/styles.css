@@ -960,6 +960,99 @@ body {
   margin-top: 16px;
 }
 
+/* ===== eBay Integration ===== */
+.ebay-connection-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.ebay-status-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.ebay-listed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.ebay-listed-badge a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* Format picker in modal */
+.format-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.format-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.format-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  transition: border-color 0.2s;
+}
+
+.format-option:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.format-option input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+.format-picker .form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-600);
+}
+
+.format-picker .form-group input {
+  padding: 10px 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  font-size: 15px;
+  width: 100%;
+}
+
+/* Detail view eBay button */
+.btn-ebay {
+  background: #0064d2;
+  color: white;
+}
+
+.btn-ebay:active {
+  background: #004a9e;
+}
+
 /* ===== Empty State ===== */
 .empty-state {
   text-align: center;

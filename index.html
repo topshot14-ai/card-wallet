@@ -266,6 +266,7 @@
           <input type="checkbox" id="listings-select-all"> Select All
         </label>
         <span id="listings-count" class="badge">0</span>
+        <button id="btn-ebay-batch" class="btn btn-primary btn-sm ebay-only hidden">eBay</button>
         <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden">Delete Selected</button>
       </div>
       <div id="listings-list" class="listings-list">
@@ -357,6 +358,31 @@
         </div>
       </div>
 
+      <!-- eBay Integration -->
+      <div id="settings-ebay" class="settings-section">
+        <h3>eBay Integration</h3>
+        <!-- Disconnected state -->
+        <div id="ebay-disconnected">
+          <div class="form-group">
+            <label for="setting-ebay-worker-url">Worker URL</label>
+            <input type="url" id="setting-ebay-worker-url" placeholder="https://your-worker.workers.dev">
+            <small>Your Cloudflare Worker proxy URL</small>
+          </div>
+          <div class="form-group">
+            <label for="setting-ebay-client-id">eBay Client ID</label>
+            <input type="text" id="setting-ebay-client-id" placeholder="Your eBay App ID (Client ID)">
+          </div>
+          <button type="button" id="btn-ebay-sign-in" class="btn btn-primary" style="margin-top:8px">Sign In with eBay</button>
+        </div>
+        <!-- Connected state -->
+        <div id="ebay-connected" class="hidden">
+          <div class="ebay-connection-info">
+            <span class="ebay-status-badge">Connected</span>
+          </div>
+          <button type="button" id="btn-ebay-disconnect" class="btn btn-danger" style="margin-top:8px">Disconnect eBay</button>
+        </div>
+      </div>
+
       <div class="settings-section">
         <h3>API Configuration</h3>
         <div class="form-group">
@@ -434,7 +460,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v2.0</p>
+      <p class="app-version">Card Wallet v3.0</p>
     </div>
   </div>
 
