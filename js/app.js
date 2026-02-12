@@ -63,6 +63,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#review-save').addEventListener('click', saveCurrentCard);
   $('#field-ebayTitle').addEventListener('input', updateCharCount);
   $('#btn-lookup-comps').addEventListener('click', handleCompLookup);
+  $('#btn-check-sold').addEventListener('click', handleCheckSoldPrices);
+  $('#btn-use-suggested').addEventListener('click', applySuggestedPrice);
 
   // Auto-generate eBay title when fields change
   const titleFields = ['field-year', 'field-brand', 'field-setName', 'field-subset',
@@ -408,6 +410,11 @@ function populateReviewForm(card) {
   } else {
     listingFields.classList.remove('hidden');
   }
+
+  // Reset sold prices
+  const soldResults = $('#sold-prices-results');
+  if (soldResults) soldResults.classList.add('hidden');
+  lastSoldStats = null;
 
   updateCharCount();
 }
@@ -761,6 +768,111 @@ function editDetailCard() {
     populateReviewForm(card);
     showView('view-review');
   });
+}
+
+// ===== Sold Price Lookup =====
+
+let lastSoldStats = null;
+
+async function handleCheckSoldPrices() {
+  if (!currentCard) return;
+  readFormIntoCard();
+
+  const workerUrl = await db.getSetting('ebayWorkerUrl');
+  if (!workerUrl) {
+    toast('Set your Worker URL in Settings first', 'warning');
+    return;
+  }
+
+  // Build search query from card fields
+  const parts = [];
+  if (currentCard.year) parts.push(currentCard.year);
+  if (currentCard.brand) parts.push(currentCard.brand);
+  if (currentCard.setName) parts.push(currentCard.setName);
+  if (currentCard.player) parts.push(currentCard.player);
+  if (currentCard.parallel) parts.push(currentCard.parallel);
+  if (currentCard.cardNumber) parts.push(`#${currentCard.cardNumber}`);
+
+  const query = parts.join(' ');
+  if (!query.trim()) {
+    toast('Add card details first so we can search', 'warning');
+    return;
+  }
+
+  showLoading('Checking sold prices...');
+
+  try {
+    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}`);
+    hideLoading();
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      toast(err.error || 'Sold price search failed', 'error');
+      return;
+    }
+
+    const data = await resp.json();
+    displaySoldPrices(data);
+  } catch (err) {
+    hideLoading();
+    toast('Cannot reach worker. Check Worker URL in Settings.', 'error');
+  }
+}
+
+function displaySoldPrices(data) {
+  const resultsEl = $('#sold-prices-results');
+  const statsEl = $('#sold-prices-stats');
+  const listEl = $('#sold-prices-list');
+
+  if (!data.stats || data.stats.count === 0) {
+    statsEl.innerHTML = '<p style="font-size:13px;color:var(--gray-500);text-align:center">No recent sold listings found for this card.</p>';
+    listEl.innerHTML = '';
+    resultsEl.classList.remove('hidden');
+    $('#btn-use-suggested').classList.add('hidden');
+    lastSoldStats = null;
+    return;
+  }
+
+  const s = data.stats;
+  lastSoldStats = s;
+
+  statsEl.innerHTML = `
+    <div class="sold-stat">
+      <div class="sold-stat-value">$${s.low.toFixed(2)}</div>
+      <div class="sold-stat-label">Low</div>
+    </div>
+    <div class="sold-stat">
+      <div class="sold-stat-value">$${s.median.toFixed(2)}</div>
+      <div class="sold-stat-label">Median</div>
+    </div>
+    <div class="sold-stat">
+      <div class="sold-stat-value">$${s.average.toFixed(2)}</div>
+      <div class="sold-stat-label">Average</div>
+    </div>
+    <div class="sold-stat suggested">
+      <div class="sold-stat-value">$${s.median.toFixed(2)}</div>
+      <div class="sold-stat-label">Suggested</div>
+    </div>
+  `;
+
+  listEl.innerHTML = (data.items || []).map(item => `
+    <div class="sold-item">
+      <span class="sold-item-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
+      <span class="sold-item-price">$${item.price.toFixed(2)}</span>
+    </div>
+  `).join('');
+
+  resultsEl.classList.remove('hidden');
+  $('#btn-use-suggested').classList.remove('hidden');
+}
+
+function applySuggestedPrice() {
+  if (!lastSoldStats || !lastSoldStats.median) return;
+  $('#field-startPrice').value = lastSoldStats.median.toFixed(2);
+  if (currentCard) {
+    currentCard.startPrice = lastSoldStats.median;
+  }
+  toast(`Price set to $${lastSoldStats.median.toFixed(2)} (median sold)`, 'success');
 }
 
 // ===== Dark Mode =====

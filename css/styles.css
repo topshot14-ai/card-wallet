@@ -1251,6 +1251,77 @@ body {
   font-size: 12px;
 }
 
+/* ===== Sold Prices ===== */
+.sold-prices-results {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+}
+
+.sold-prices-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sold-stat {
+  text-align: center;
+}
+
+.sold-stat .sold-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.sold-stat .sold-stat-label {
+  font-size: 10px;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sold-stat.suggested .sold-stat-value {
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.sold-prices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.sold-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 12px;
+}
+
+.sold-item-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gray-600);
+  margin-right: 8px;
+}
+
+.sold-item-price {
+  font-weight: 600;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
 /* ===== Toggle Switch ===== */
 .toggle-row {
   display: flex;

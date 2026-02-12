@@ -224,6 +224,12 @@
             <label for="field-startPrice">Start Price ($)</label>
             <input type="number" id="field-startPrice" step="0.01" placeholder="0.99">
           </div>
+          <button type="button" id="btn-check-sold" class="btn btn-secondary btn-sm" style="margin-top:4px">Check Sold Prices</button>
+          <div id="sold-prices-results" class="sold-prices-results hidden">
+            <div class="sold-prices-stats" id="sold-prices-stats"></div>
+            <div class="sold-prices-list" id="sold-prices-list"></div>
+            <button type="button" id="btn-use-suggested" class="btn btn-primary btn-sm" style="margin-top:8px">Use Suggested Price</button>
+          </div>
         </div>
 
         <div class="form-group">
