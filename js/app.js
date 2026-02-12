@@ -73,11 +73,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (el) el.addEventListener('change', autoGenerateTitle);
   });
 
-  // Graded toggle - show/hide grade fields
+  // Graded toggle - disable grade fields when not graded
   $('#field-graded').addEventListener('change', (e) => {
     const isGraded = e.target.value === 'Yes';
-    $('#field-gradeCompany').closest('.form-group').style.opacity = isGraded ? '1' : '0.5';
-    $('#field-gradeValue').closest('.form-group').style.opacity = isGraded ? '1' : '0.5';
+    const companyEl = $('#field-gradeCompany');
+    const gradeEl = $('#field-gradeValue');
+    companyEl.disabled = !isGraded;
+    gradeEl.disabled = !isGraded;
+    companyEl.closest('.form-group').style.opacity = isGraded ? '1' : '0.4';
+    gradeEl.closest('.form-group').style.opacity = isGraded ? '1' : '0.4';
+    if (!isGraded) {
+      companyEl.value = '';
+      gradeEl.value = '';
+    }
   });
 
   // Show/hide listing-specific fields based on mode
@@ -119,6 +127,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update eBay UI on auth changes
   window.addEventListener('ebay-auth-changed', () => updateEbayUI());
   window.addEventListener('refresh-listings', () => refreshListings());
+  window.addEventListener('refresh-collection', () => refreshCollection());
+
+  // Event delegation for recent scans
+  $('#recent-scans-list').addEventListener('click', (e) => {
+    const item = e.target.closest('.recent-scan-item');
+    if (item) {
+      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: item.dataset.id } }));
+    }
+  });
 
   // On sign-in, pull remote cards and refresh views
   window.addEventListener('auth-state-changed', async (e) => {
@@ -238,6 +255,44 @@ async function handleIdentify() {
   });
 
   currentCard.ebayTitle = generateEbayTitle(currentCard);
+
+  // Duplicate detection
+  const existingCards = await db.getAllCards();
+  const duplicate = existingCards.find(c =>
+    c.player && currentCard.player &&
+    c.player.toLowerCase() === currentCard.player.toLowerCase() &&
+    c.year === currentCard.year &&
+    c.brand === currentCard.brand &&
+    c.setName === currentCard.setName &&
+    c.cardNumber === currentCard.cardNumber &&
+    (c.parallel || '') === (currentCard.parallel || '')
+  );
+
+  if (duplicate) {
+    const { showModal } = await import('./ui.js');
+    const choice = await showModal(
+      'Possible Duplicate',
+      `A card matching "${cardDisplayName(currentCard)}" already exists. What would you like to do?`,
+      [
+        { label: 'Add Anyway', value: 'add', class: 'btn-secondary' },
+        { label: 'Update Existing', value: 'update', class: 'btn-primary' }
+      ]
+    );
+    if (choice === 'update') {
+      // Keep existing card's ID and images if new ones aren't better
+      currentCard.id = duplicate.id;
+      currentCard.dateAdded = duplicate.dateAdded;
+      if (!currentCard.imageBlob && duplicate.imageBlob) {
+        currentCard.imageBlob = duplicate.imageBlob;
+        currentCard.imageThumbnail = duplicate.imageThumbnail;
+      }
+      if (!currentCard.imageBackBlob && duplicate.imageBackBlob) {
+        currentCard.imageBackBlob = duplicate.imageBackBlob;
+        currentCard.imageBackThumb = duplicate.imageBackThumb;
+      }
+    }
+    // 'add' or null (dismissed) — proceed as new card
+  }
 
   // Reset staged photos
   clearStagedPhoto('front');
@@ -384,11 +439,16 @@ function readFormIntoCard() {
   const compAvg = parseFloat($('#field-compAvg').value);
   const compHigh = parseFloat($('#field-compHigh').value);
   if (!isNaN(compLow) || !isNaN(compAvg) || !isNaN(compHigh)) {
+    const hadComps = currentCard.compData && (currentCard.compData.low || currentCard.compData.avg || currentCard.compData.high);
     currentCard.compData = {
       low: isNaN(compLow) ? null : compLow,
       avg: isNaN(compAvg) ? null : compAvg,
       high: isNaN(compHigh) ? null : compHigh
     };
+    // Set timestamp if comps are new or changed
+    if (!hadComps || compLow !== currentCard.compData?.low) {
+      currentCard.compLookedUpAt = currentCard.compLookedUpAt || new Date().toISOString();
+    }
   }
 
   return currentCard;
@@ -397,6 +457,16 @@ function readFormIntoCard() {
 async function saveCurrentCard() {
   const card = readFormIntoCard();
   if (!card) return;
+
+  // Validation
+  if (card.mode === 'listing' && !card.ebayTitle && !card.player) {
+    toast('Please enter a player name or eBay title', 'warning');
+    return;
+  }
+  if (card.mode === 'listing' && card.startPrice <= 0) {
+    toast('Start price must be greater than $0', 'warning');
+    return;
+  }
 
   card.lastModified = new Date().toISOString();
 
@@ -447,12 +517,13 @@ async function handleCompLookup() {
     hideLoading();
 
     if (result.success && result.data) {
-      // Populate comp fields from API data
       $('#comp-results').classList.remove('hidden');
+      currentCard.compLookedUpAt = new Date().toISOString();
       toast('Comp data loaded', 'success');
     } else {
       // Opened in new tab
       $('#comp-results').classList.remove('hidden');
+      currentCard.compLookedUpAt = new Date().toISOString();
       toast('Paste your comp results after checking 130point', 'info', 4000);
     }
   } catch (err) {
@@ -463,11 +534,12 @@ async function handleCompLookup() {
 
 // ===== Recent Scans =====
 
+let recentScansShown = 20;
+
 async function loadRecentScans() {
   const all = await db.getAllCards();
-  const recent = all
-    .sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded))
-    .slice(0, 10);
+  const sorted = all.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+  const recent = sorted.slice(0, recentScansShown);
 
   const container = $('#recent-scans-list');
 
@@ -489,11 +561,14 @@ async function loadRecentScans() {
     </div>
   `).join('');
 
-  container.querySelectorAll('.recent-scan-item').forEach(item => {
-    item.addEventListener('click', () => {
-      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: item.dataset.id } }));
+  // Show "Load More" if there are more cards
+  if (sorted.length > recentScansShown) {
+    container.innerHTML += `<button class="btn btn-secondary btn-sm" id="btn-load-more-scans" style="align-self:center;margin-top:8px">Show More (${sorted.length - recentScansShown} remaining)</button>`;
+    document.getElementById('btn-load-more-scans').addEventListener('click', () => {
+      recentScansShown += 20;
+      loadRecentScans();
     });
-  });
+  }
 }
 
 // ===== Card Detail View =====
@@ -534,7 +609,11 @@ function showCardDetail(card) {
     if (card.compData.low) comp.push(`Low: $${card.compData.low}`);
     if (card.compData.avg) comp.push(`Avg: $${card.compData.avg}`);
     if (card.compData.high) comp.push(`High: $${card.compData.high}`);
-    fields.push(['Comps', comp.join(' | ')]);
+    let compStr = comp.join(' | ');
+    if (card.compLookedUpAt) {
+      compStr += ` (${formatDate(card.compLookedUpAt)})`;
+    }
+    fields.push(['Comps', compStr]);
   }
 
   if (card.ebayListingId) {
@@ -543,6 +622,10 @@ function showCardDetail(card) {
 
   if (card.notes) {
     fields.push(['Notes', card.notes]);
+  }
+
+  if (card.mode === 'listing' && card.status && card.status !== 'pending') {
+    fields.push(['Status', card.status.charAt(0).toUpperCase() + card.status.slice(1)]);
   }
 
   fields.push(['Added', formatDate(card.dateAdded)]);
@@ -574,6 +657,13 @@ function showCardDetail(card) {
       ${card.mode === 'listing' && !card.ebayListingId
         ? '<button class="btn btn-ebay ebay-only hidden" id="detail-ebay-btn">List on eBay</button>'
         : ''}
+      ${card.mode === 'listing' && card.status !== 'sold'
+        ? '<button class="btn btn-success" id="detail-mark-sold-btn">Mark as Sold</button>'
+        : ''}
+      ${card.mode === 'listing' && card.status === 'sold'
+        ? '<button class="btn btn-secondary" id="detail-mark-unsold-btn">Mark as Unsold</button>'
+        : ''}
+      <button class="btn btn-secondary" id="detail-move-btn">${card.mode === 'listing' ? 'Move to Collection' : 'Move to Listings'}</button>
       <button class="btn btn-secondary" id="detail-comp-btn">Look Up Comps</button>
       <button class="btn btn-danger" id="detail-delete-btn">Delete Card</button>
     </div>
@@ -591,6 +681,47 @@ function showCardDetail(card) {
       // Refresh detail view after listing
       const updatedCard = await db.getCard(card.id);
       if (updatedCard) showCardDetail(updatedCard);
+    });
+  }
+
+  // Mark as Sold
+  const soldBtn = document.getElementById('detail-mark-sold-btn');
+  if (soldBtn) {
+    soldBtn.addEventListener('click', async () => {
+      card.status = 'sold';
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+      toast('Card marked as sold', 'success');
+      await refreshListings();
+      showCardDetail(card);
+    });
+  }
+
+  // Mark as Unsold
+  const unsoldBtn = document.getElementById('detail-mark-unsold-btn');
+  if (unsoldBtn) {
+    unsoldBtn.addEventListener('click', async () => {
+      card.status = 'unsold';
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+      toast('Card marked as unsold', 'success');
+      await refreshListings();
+      showCardDetail(card);
+    });
+  }
+
+  // Move between modes
+  const moveBtn = document.getElementById('detail-move-btn');
+  if (moveBtn) {
+    moveBtn.addEventListener('click', async () => {
+      const newMode = card.mode === 'listing' ? 'collection' : 'listing';
+      card.mode = newMode;
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+      toast(`Card moved to ${newMode === 'listing' ? 'listings' : 'collection'}`, 'success');
+      await refreshListings();
+      await refreshCollection();
+      showCardDetail(card);
     });
   }
 

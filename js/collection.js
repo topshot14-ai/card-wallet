@@ -33,6 +33,14 @@ export async function initCollection() {
     applyFilters();
   });
 
+  // Event delegation on grid
+  $('#collection-grid').addEventListener('click', (e) => {
+    const tile = e.target.closest('.card-tile');
+    if (tile) {
+      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: tile.dataset.id } }));
+    }
+  });
+
   await refreshCollection();
 }
 
@@ -116,13 +124,6 @@ function renderGrid() {
     </div>
   `;
   }).join('');
-
-  // Click handler for card detail
-  grid.querySelectorAll('.card-tile').forEach(tile => {
-    tile.addEventListener('click', () => {
-      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: tile.dataset.id } }));
-    });
-  });
 }
 
 function escapeHtml(str) {

@@ -6,14 +6,75 @@ import { cardDisplayName, cardDetailLine } from './card-model.js';
 
 let listings = [];
 let selectedIds = new Set();
+let statusFilter = 'all'; // 'all', 'pending', 'listed', 'sold', 'unsold'
 
 export async function initListings() {
   await refreshListings();
 
-  // Event listeners
+  // Static event listeners (once)
   $('#btn-export-csv').addEventListener('click', exportCSV);
   $('#listings-select-all').addEventListener('click', toggleSelectAll);
   $('#btn-delete-selected').addEventListener('click', deleteSelected);
+  $('#btn-move-to-collection').addEventListener('click', moveSelectedToCollection);
+
+  // Status filter pills — event delegation
+  const filterContainer = $('#listings-status-filters');
+  if (filterContainer) {
+    filterContainer.addEventListener('click', (e) => {
+      const pill = e.target.closest('.pill');
+      if (!pill) return;
+      filterContainer.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      statusFilter = pill.dataset.status;
+      render();
+    });
+  }
+
+  // Event delegation on listings container
+  const container = $('#listings-list');
+  container.addEventListener('change', (e) => {
+    const cb = e.target.closest('.listing-checkbox');
+    if (!cb) return;
+    e.stopPropagation();
+    const id = cb.dataset.id;
+    if (cb.checked) {
+      selectedIds.add(id);
+    } else {
+      selectedIds.delete(id);
+    }
+    updateBulkButtons();
+  });
+
+  container.addEventListener('click', async (e) => {
+    // View button
+    const viewBtn = e.target.closest('.listing-view-btn');
+    if (viewBtn) {
+      e.stopPropagation();
+      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: viewBtn.dataset.id } }));
+      return;
+    }
+
+    // Delete button
+    const delBtn = e.target.closest('.listing-delete-btn');
+    if (delBtn) {
+      e.stopPropagation();
+      const confirmed = await confirm('Delete Card', 'Remove this listing?');
+      if (confirmed) {
+        await db.deleteCard(delBtn.dataset.id);
+        await refreshListings();
+        toast('Listing removed', 'success');
+      }
+      return;
+    }
+
+    // Inline price edit — click on price to edit
+    const priceEl = e.target.closest('.listing-price');
+    if (priceEl && !priceEl.querySelector('input')) {
+      e.stopPropagation();
+      startInlineEdit(priceEl);
+      return;
+    }
+  });
 }
 
 export async function refreshListings() {
@@ -23,22 +84,35 @@ export async function refreshListings() {
   render();
 }
 
+function getFilteredListings() {
+  if (statusFilter === 'all') return listings;
+  return listings.filter(c => c.status === statusFilter);
+}
+
 function render() {
   const container = $('#listings-list');
   const countBadge = $('#listings-count');
-  const deleteBtn = $('#btn-delete-selected');
   const selectAll = $('#listings-select-all');
 
+  const filtered = getFilteredListings();
   countBadge.textContent = listings.length;
 
-  if (listings.length === 0) {
-    container.innerHTML = '<p class="empty-state">No listings yet. Scan cards in "List It" mode to add them here.</p>';
-    deleteBtn.classList.add('hidden');
+  // Update filter counts
+  updateFilterCounts();
+
+  if (filtered.length === 0) {
+    const msg = listings.length === 0
+      ? 'No listings yet. Scan cards in "List It" mode to add them here.'
+      : 'No listings match this filter.';
+    container.innerHTML = `<p class="empty-state">${msg}</p>`;
     selectAll.checked = false;
+    updateBulkButtons();
     return;
   }
 
-  container.innerHTML = listings.map(card => `
+  container.innerHTML = filtered.map(card => {
+    const statusBadge = getStatusBadge(card.status);
+    return `
     <div class="listing-item" data-id="${card.id}">
       <input type="checkbox" class="listing-checkbox" data-id="${card.id}" ${selectedIds.has(card.id) ? 'checked' : ''}>
       ${card.imageThumbnail
@@ -46,81 +120,130 @@ function render() {
         : '<div class="no-image-placeholder">No img</div>'}
       <div class="listing-info">
         <div class="title">${escapeHtml(card.ebayTitle || cardDisplayName(card))}</div>
-        <div class="meta">${escapeHtml(cardDetailLine(card))}</div>
+        <div class="meta">${escapeHtml(cardDetailLine(card))}${statusBadge}</div>
       </div>
-      <div class="listing-price">${card.startPrice ? '$' + Number(card.startPrice).toFixed(2) : ''}</div>
+      <div class="listing-price" data-id="${card.id}" title="Tap to edit">${card.startPrice ? '$' + Number(card.startPrice).toFixed(2) : ''}</div>
       <div class="listing-actions">
         <button class="listing-action-btn listing-view-btn" data-id="${card.id}" title="View">&#128065;</button>
         <button class="listing-action-btn listing-delete-btn" data-id="${card.id}" title="Delete">&#128465;</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
-  // Checkbox listeners
-  container.querySelectorAll('.listing-checkbox').forEach(cb => {
-    cb.addEventListener('change', (e) => {
-      e.stopPropagation();
-      const id = cb.dataset.id;
-      if (cb.checked) {
-        selectedIds.add(id);
-      } else {
-        selectedIds.delete(id);
-      }
-      updateDeleteBtn();
-    });
+  updateBulkButtons();
+}
+
+function getStatusBadge(status) {
+  const badges = {
+    pending: '',
+    listed: ' <span class="status-badge status-listed">Listed</span>',
+    sold: ' <span class="status-badge status-sold">Sold</span>',
+    unsold: ' <span class="status-badge status-unsold">Unsold</span>',
+    exported: ' <span class="status-badge status-exported">Exported</span>',
+  };
+  return badges[status] || '';
+}
+
+function updateFilterCounts() {
+  const counts = { all: listings.length, pending: 0, listed: 0, sold: 0, unsold: 0 };
+  for (const card of listings) {
+    if (counts[card.status] !== undefined) counts[card.status]++;
+  }
+  const container = $('#listings-status-filters');
+  if (!container) return;
+  container.querySelectorAll('.pill').forEach(pill => {
+    const status = pill.dataset.status;
+    const count = counts[status];
+    const label = pill.dataset.label || status;
+    pill.textContent = count > 0 ? `${label} (${count})` : label;
   });
-
-  // View buttons
-  container.querySelectorAll('.listing-view-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: btn.dataset.id } }));
-    });
-  });
-
-  // Delete buttons
-  container.querySelectorAll('.listing-delete-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const confirmed = await confirm('Delete Card', 'Remove this listing?');
-      if (confirmed) {
-        await db.deleteCard(btn.dataset.id);
-        await refreshListings();
-        toast('Listing removed', 'success');
-      }
-    });
-  });
-
-  updateDeleteBtn();
 }
 
 function toggleSelectAll() {
   const selectAll = $('#listings-select-all');
+  const filtered = getFilteredListings();
   if (selectAll.checked) {
-    listings.forEach(l => selectedIds.add(l.id));
+    filtered.forEach(l => selectedIds.add(l.id));
   } else {
     selectedIds.clear();
   }
   render();
 }
 
-function updateDeleteBtn() {
+function updateBulkButtons() {
   const deleteBtn = $('#btn-delete-selected');
+  const moveBtn = $('#btn-move-to-collection');
   if (selectedIds.size > 0) {
     deleteBtn.classList.remove('hidden');
-    deleteBtn.textContent = `Delete Selected (${selectedIds.size})`;
+    deleteBtn.textContent = `Delete (${selectedIds.size})`;
+    moveBtn.classList.remove('hidden');
   } else {
     deleteBtn.classList.add('hidden');
+    moveBtn.classList.add('hidden');
   }
 }
 
 async function deleteSelected() {
   const confirmed = await confirm('Delete Selected', `Remove ${selectedIds.size} listing(s)?`);
   if (confirmed) {
+    const count = selectedIds.size;
     await db.deleteCards([...selectedIds]);
     await refreshListings();
-    toast(`${selectedIds.size} listing(s) removed`, 'success');
+    toast(`${count} listing(s) removed`, 'success');
   }
+}
+
+async function moveSelectedToCollection() {
+  const count = selectedIds.size;
+  for (const id of selectedIds) {
+    const card = await db.getCard(id);
+    if (card) {
+      card.mode = 'collection';
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+    }
+  }
+  await refreshListings();
+  toast(`${count} card(s) moved to collection`, 'success');
+  window.dispatchEvent(new CustomEvent('refresh-collection'));
+}
+
+// ===== Inline Price Edit =====
+
+function startInlineEdit(priceEl) {
+  const cardId = priceEl.dataset.id;
+  const card = listings.find(c => c.id === cardId);
+  if (!card) return;
+
+  const currentPrice = card.startPrice || 0.99;
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = '0.01';
+  input.value = currentPrice;
+  input.className = 'inline-price-input';
+  input.min = '0.01';
+
+  priceEl.textContent = '';
+  priceEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = async () => {
+    const newPrice = parseFloat(input.value) || currentPrice;
+    card.startPrice = newPrice;
+    card.lastModified = new Date().toISOString();
+    await db.saveCard(card);
+    priceEl.textContent = '$' + Number(newPrice).toFixed(2);
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') {
+      priceEl.textContent = '$' + Number(currentPrice).toFixed(2);
+    }
+  });
 }
 
 // ===== eBay CSV Export =====
@@ -200,6 +323,15 @@ function exportCSV() {
     .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     .join('\n');
 
+  // Mark exported cards
+  cardsToExport.forEach(async (card) => {
+    if (card.status === 'pending') {
+      card.status = 'exported';
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+    }
+  });
+
   // Download
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -210,6 +342,7 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 
   toast(`Exported ${cardsToExport.length} listing(s)`, 'success');
+  refreshListings();
 }
 
 function buildDescription(card) {

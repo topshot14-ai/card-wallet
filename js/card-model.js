@@ -19,7 +19,7 @@ export function createCard(data = {}) {
   return {
     id: data.id || uuid(),
     mode: data.mode || 'listing',        // 'listing' or 'collection'
-    status: data.status || 'pending',     // 'pending', 'exported', 'sold'
+    status: data.status || 'pending',     // 'pending', 'listed', 'sold', 'unsold', 'exported'
     sport: data.sport || '',
     year: data.year || '',
     brand: data.brand || '',
@@ -38,6 +38,7 @@ export function createCard(data = {}) {
     ebayTitle: data.ebayTitle || '',
     startPrice: data.startPrice || 0.99,
     compData: data.compData || {},
+    compLookedUpAt: data.compLookedUpAt || null, // ISO timestamp of last comp lookup
     imageBlob: data.imageBlob || null,        // front full image (base64 data URI)
     imageThumbnail: data.imageThumbnail || null, // front thumbnail
     imageBackBlob: data.imageBackBlob || null,   // back full image

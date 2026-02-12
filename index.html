@@ -261,13 +261,21 @@
       <button id="btn-export-csv" class="header-btn primary">Export CSV</button>
     </header>
     <div class="view-content">
+      <div class="listings-filters" id="listings-status-filters">
+        <button class="pill active" data-status="all" data-label="All">All</button>
+        <button class="pill" data-status="pending" data-label="Pending">Pending</button>
+        <button class="pill" data-status="listed" data-label="Listed">Listed</button>
+        <button class="pill" data-status="sold" data-label="Sold">Sold</button>
+        <button class="pill" data-status="unsold" data-label="Unsold">Unsold</button>
+      </div>
       <div class="listings-toolbar">
         <label class="select-all-label">
           <input type="checkbox" id="listings-select-all"> Select All
         </label>
         <span id="listings-count" class="badge">0</span>
         <button id="btn-ebay-batch" class="btn btn-primary btn-sm ebay-only hidden">eBay</button>
-        <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden">Delete Selected</button>
+        <button id="btn-move-to-collection" class="btn btn-secondary btn-sm hidden">To Collection</button>
+        <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden">Delete</button>
       </div>
       <div id="listings-list" class="listings-list">
         <p class="empty-state">No listings yet. Scan cards in "List It" mode to add them here.</p>

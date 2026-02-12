@@ -1053,6 +1053,76 @@ body {
   background: #004a9e;
 }
 
+/* ===== Status Badges ===== */
+.status-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.status-listed {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-sold {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.status-unsold {
+  background: var(--warning-light);
+  color: #92400e;
+}
+
+.status-exported {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+/* Listings status filters */
+.listings-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+/* Inline price edit */
+.inline-price-input {
+  width: 70px;
+  padding: 4px 6px;
+  border: 2px solid var(--primary);
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--success);
+  text-align: right;
+  outline: none;
+}
+
+.listing-price {
+  cursor: pointer;
+}
+
+/* Success button */
+.btn-success {
+  background: var(--success);
+  color: white;
+}
+
+.btn-success:active {
+  background: #15803d;
+}
+
 /* ===== Empty State ===== */
 .empty-state {
   text-align: center;
