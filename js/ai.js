@@ -31,6 +31,7 @@ Important rules:
 - ALWAYS read text printed on the card before guessing. The back of the card typically prints the brand, set name, year, card number, and legal text. Use this printed information as your primary source — do NOT guess the set from visual appearance alone.
 - For year, use the product release year, not the season year (e.g., 2023 Topps released in 2023). Check the copyright year on the back.
 - For setName, read it from the card back or front. Many sets look similar visually (e.g., Prizm vs Select vs Optic) — rely on what is printed, not appearance.
+- For parallel, READ the parallel name printed on the card (front or back) if present. Do NOT guess the parallel from color alone — many parallels look similar (e.g., Blue Velocity vs Purple Shock in Optic, or Silver vs Hyper in Prizm). The parallel name is often printed on the front or back of the card. If no parallel name is printed, describe what you see but note uncertainty.
 - For attributes, include RC (Rookie Card) only if there is a clear RC designation on the card
 - If you cannot determine a field, use an empty string or empty array
 - Be as specific as possible about the set name and parallel
