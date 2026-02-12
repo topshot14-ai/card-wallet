@@ -2,8 +2,7 @@
 
 import * as db from './db.js';
 import { toast, confirm, $ } from './ui.js';
-import { isFirebaseConfigured, initFirebase } from './firebase.js';
-import { initAuth, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut as authSignOut } from './auth.js';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut as authSignOut } from './auth.js';
 import { pullAllCards } from './sync.js';
 
 export async function initSettings() {
@@ -48,37 +47,6 @@ export async function initSettings() {
   // Default price
   $('#setting-default-price').addEventListener('change', async (e) => {
     await db.setSetting('defaultPrice', parseFloat(e.target.value) || 0.99);
-  });
-
-  // Firebase config save
-  $('#btn-save-firebase-config').addEventListener('click', async () => {
-    const raw = $('#setting-firebase-config').value.trim();
-    if (!raw) {
-      await db.setSetting('firebaseConfig', null);
-      showAccountState('not-configured');
-      toast('Firebase config cleared', 'info');
-      return;
-    }
-    try {
-      const config = JSON.parse(raw);
-      if (!config.apiKey || !config.projectId) {
-        toast('Config must include apiKey and projectId', 'error');
-        return;
-      }
-      await db.setSetting('firebaseConfig', raw);
-
-      // Immediately init Firebase and show sign-in
-      const success = await initFirebase();
-      if (success) {
-        initAuth();
-        showAccountState('signed-out');
-        toast('Firebase connected — sign in above', 'success');
-      } else {
-        toast('Config saved but connection failed. Check your config.', 'error');
-      }
-    } catch {
-      toast('Invalid JSON format', 'error');
-    }
   });
 
   // Export data
@@ -194,24 +162,17 @@ export async function initSettings() {
     }
   });
 
-  // Set initial account state
-  if (isFirebaseConfigured()) {
-    showAccountState('signed-out'); // auth listener will switch to signed-in if already authed
-  } else {
-    showAccountState('not-configured');
-  }
+  // Set initial account state — auth listener will switch to signed-in if already authed
+  showAccountState('signed-out');
 
   await refreshStats();
 }
 
 function showAccountState(state) {
-  $('#auth-not-configured').classList.add('hidden');
   $('#auth-signed-out').classList.add('hidden');
   $('#auth-signed-in').classList.add('hidden');
 
-  if (state === 'not-configured') {
-    $('#auth-not-configured').classList.remove('hidden');
-  } else if (state === 'signed-in') {
+  if (state === 'signed-in') {
     $('#auth-signed-in').classList.remove('hidden');
   } else {
     $('#auth-signed-out').classList.remove('hidden');
@@ -233,9 +194,6 @@ async function loadSettings() {
 
   const defaultPrice = await db.getSetting('defaultPrice');
   if (defaultPrice) $('#setting-default-price').value = defaultPrice;
-
-  const firebaseConfig = await db.getSetting('firebaseConfig');
-  if (firebaseConfig) $('#setting-firebase-config').value = firebaseConfig;
 }
 
 export async function refreshStats() {

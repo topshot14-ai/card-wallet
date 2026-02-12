@@ -1,9 +1,16 @@
-// Firebase initialization — reads config from IndexedDB, graceful no-op if not set
-
-import { getSetting } from './db.js';
+// Firebase initialization — hardcoded config, no user setup needed
 
 let firebaseApp = null;
 let firebaseConfigured = false;
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD2gV5fO5suYV3g2tx08Icn1trNb_ZbGDQ",
+  authDomain: "card-wallet-f634a.firebaseapp.com",
+  projectId: "card-wallet-f634a",
+  storageBucket: "card-wallet-f634a.firebasestorage.app",
+  messagingSenderId: "414571917545",
+  appId: "1:414571917545:web:66273ac5d7dad122264078"
+};
 
 export function isFirebaseConfigured() {
   return firebaseConfigured;
@@ -19,33 +26,7 @@ export function getFirestore() {
   return firebase.firestore();
 }
 
-export function getStorage() {
-  if (!firebaseConfigured) return null;
-  return firebase.storage();
-}
-
 export async function initFirebase() {
-  const configJson = await getSetting('firebaseConfig');
-  if (!configJson) {
-    firebaseConfigured = false;
-    return false;
-  }
-
-  let config;
-  try {
-    config = typeof configJson === 'string' ? JSON.parse(configJson) : configJson;
-  } catch {
-    console.warn('Invalid Firebase config JSON');
-    firebaseConfigured = false;
-    return false;
-  }
-
-  if (!config.apiKey || !config.projectId) {
-    console.warn('Firebase config missing required fields (apiKey, projectId)');
-    firebaseConfigured = false;
-    return false;
-  }
-
   // Check if Firebase SDK is loaded
   if (typeof firebase === 'undefined') {
     console.warn('Firebase SDK not loaded');
@@ -54,9 +35,8 @@ export async function initFirebase() {
   }
 
   try {
-    // Avoid re-initializing if already done
     if (!firebase.apps.length) {
-      firebaseApp = firebase.initializeApp(config);
+      firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
     } else {
       firebaseApp = firebase.apps[0];
     }

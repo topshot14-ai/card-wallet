@@ -328,12 +328,8 @@
       <!-- Account — always visible, first thing you see -->
       <div id="settings-account" class="settings-section">
         <h3>Account</h3>
-        <!-- Not-configured state -->
-        <div id="auth-not-configured" class="hidden">
-          <p class="auth-setup-msg">Set up Firebase in Advanced settings below to enable cloud sync and sign-in.</p>
-        </div>
-        <!-- Signed-out state -->
-        <div id="auth-signed-out" class="hidden">
+        <!-- Signed-out state (visible by default) -->
+        <div id="auth-signed-out">
           <div class="form-group">
             <label for="auth-email">Email</label>
             <input type="email" id="auth-email" placeholder="you@example.com">
@@ -438,17 +434,6 @@
         </div>
       </div>
 
-      <!-- Advanced: Firebase config tucked at bottom -->
-      <div class="settings-section">
-        <h3>Advanced</h3>
-        <div class="form-group">
-          <label for="setting-firebase-config">Firebase Config (JSON)</label>
-          <textarea id="setting-firebase-config" rows="3" placeholder='{"apiKey":"...","projectId":"...","authDomain":"...","storageBucket":"...","appId":"..."}'></textarea>
-          <small>Paste your Firebase web app config to enable cloud sync.</small>
-        </div>
-        <button type="button" id="btn-save-firebase-config" class="btn btn-primary btn-sm">Save Firebase Config</button>
-      </div>
-
       <p class="app-version">Card Wallet v2.0</p>
     </div>
   </div>
@@ -489,7 +474,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 
   <!-- Scripts -->
   <script type="module" src="js/app.js"></script>

@@ -1,8 +1,9 @@
-// Sync layer — Firestore + Storage push/pull with IndexedDB as local cache
+// Sync layer — Firestore push/pull with IndexedDB as local cache
+// No Firebase Storage — thumbnails stored as base64 in Firestore docs, full images stay local only
 
-import { isFirebaseConfigured, getFirestore, getStorage } from './firebase.js';
+import { isFirebaseConfigured, getFirestore } from './firebase.js';
 import { getCurrentUser } from './auth.js';
-import { saveCardLocal, getAllCards, getCard } from './db.js';
+import { saveCardLocal, getAllCards } from './db.js';
 
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'error'
 
@@ -15,71 +16,23 @@ export function getSyncStatus() {
   return syncStatus;
 }
 
-// Fields to exclude from Firestore doc (full images stored in Storage)
+// Fields to exclude from Firestore doc (full image blobs are too large)
 const EXCLUDED_FIELDS = ['imageBlob', 'imageBackBlob'];
 
-function cardToFirestoreDoc(card, imageUrl, imageBackUrl) {
+function cardToFirestoreDoc(card) {
   const doc = {};
   for (const [key, value] of Object.entries(card)) {
     if (!EXCLUDED_FIELDS.includes(key)) {
       doc[key] = value === undefined ? null : value;
     }
   }
-  doc.imageUrl = imageUrl || null;
-  doc.imageBackUrl = imageBackUrl || null;
+  // Store thumbnails in Firestore (small enough at ~5-15KB base64)
+  // Full images (imageBlob, imageBackBlob) stay local only
   return doc;
 }
 
 function firestoreDocToCard(doc) {
-  const card = { ...doc };
-  // imageUrl/imageBackUrl serve as imageBlob/imageBackBlob for <img src>
-  if (card.imageUrl && !card.imageBlob) {
-    card.imageBlob = card.imageUrl;
-  }
-  if (card.imageBackUrl && !card.imageBackBlob) {
-    card.imageBackBlob = card.imageBackUrl;
-  }
-  return card;
-}
-
-// ===== Image Upload to Firebase Storage =====
-
-async function uploadImage(uid, cardId, blob, filename) {
-  const storage = getStorage();
-  if (!storage || !blob) return null;
-
-  // Only upload base64 data URIs (not URLs that are already in Storage)
-  if (typeof blob === 'string' && blob.startsWith('https://')) {
-    return blob; // Already a Storage URL
-  }
-
-  const ref = storage.ref(`users/${uid}/cards/${cardId}/${filename}`);
-
-  if (typeof blob === 'string' && blob.startsWith('data:')) {
-    // Base64 data URI
-    await ref.putString(blob, 'data_url');
-  } else {
-    await ref.put(blob);
-  }
-
-  return ref.getDownloadURL();
-}
-
-async function deleteCardImages(uid, cardId) {
-  const storage = getStorage();
-  if (!storage) return;
-
-  const files = ['front.jpg', 'back.jpg'];
-  for (const file of files) {
-    try {
-      await storage.ref(`users/${uid}/cards/${cardId}/${file}`).delete();
-    } catch (err) {
-      // Ignore not-found errors
-      if (err.code !== 'storage/object-not-found') {
-        console.warn('Failed to delete storage file:', err);
-      }
-    }
-  }
+  return { ...doc };
 }
 
 // ===== Push: Local → Cloud =====
@@ -95,12 +48,7 @@ export async function pushCard(card) {
   try {
     setSyncStatus('syncing');
 
-    // Upload full images to Storage
-    const imageUrl = await uploadImage(user.uid, card.id, card.imageBlob, 'front.jpg');
-    const imageBackUrl = await uploadImage(user.uid, card.id, card.imageBackBlob, 'back.jpg');
-
-    // Write card doc to Firestore (without full image blobs)
-    const doc = cardToFirestoreDoc(card, imageUrl, imageBackUrl);
+    const doc = cardToFirestoreDoc(card);
     await db.collection('users').doc(user.uid).collection('cards').doc(card.id).set(doc);
 
     setSyncStatus('idle');
@@ -143,11 +91,12 @@ export async function pullAllCards() {
         const localTime = new Date(localCard.lastModified || localCard.dateAdded || 0).getTime();
 
         if (remoteTime > localTime) {
-          // Remote is newer — keep local images if remote only has URLs
-          if (!remoteCard.imageBlob && localCard.imageBlob && !localCard.imageBlob.startsWith('https://')) {
-            // Local has original blob, remote has URL — prefer keeping local blob for offline
-          }
-          await saveCardLocal({ ...localCard, ...remoteCard });
+          // Remote is newer — merge but keep local full images
+          const merged = { ...localCard, ...remoteCard };
+          // Preserve local full images (they aren't in Firestore)
+          if (localCard.imageBlob) merged.imageBlob = localCard.imageBlob;
+          if (localCard.imageBackBlob) merged.imageBackBlob = localCard.imageBackBlob;
+          await saveCardLocal(merged);
         }
       }
     }
@@ -181,7 +130,6 @@ export async function deleteCardRemote(cardId) {
 
   try {
     await firestore.collection('users').doc(user.uid).collection('cards').doc(cardId).delete();
-    await deleteCardImages(user.uid, cardId);
   } catch (err) {
     console.error('Delete card remote failed:', err);
   }
