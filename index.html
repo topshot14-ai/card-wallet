@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Card Wallet</title>
   <link rel="stylesheet" href="css/styles.css">
+  <script>try{if(localStorage.getItem('cw_darkMode')==='true')document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
 </head>
 <body>
   <!-- Loading Overlay -->
@@ -407,6 +408,17 @@
             <option value="claude-sonnet-4-20250514">Claude Sonnet (Recommended)</option>
             <option value="claude-haiku-4-20250414">Claude Haiku (Cheaper)</option>
           </select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Appearance</h3>
+        <div class="form-group">
+          <label class="toggle-row">
+            <span>Dark Mode</span>
+            <input type="checkbox" id="setting-dark-mode" class="toggle-input">
+            <span class="toggle-switch"></span>
+          </label>
         </div>
       </div>
 

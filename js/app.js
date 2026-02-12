@@ -119,6 +119,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initSettings();
   await loadRecentScans();
 
+  // Appearance
+  initDarkMode();
+
   // eBay integration
   initEbaySettings();
   await initEbayAuth();
@@ -757,6 +760,33 @@ function editDetailCard() {
     currentCard = card;
     populateReviewForm(card);
     showView('view-review');
+  });
+}
+
+// ===== Dark Mode =====
+
+function initDarkMode() {
+  const toggle = $('#setting-dark-mode');
+  if (!toggle) return;
+
+  // Apply saved preference immediately
+  db.getSetting('darkMode').then(isDark => {
+    if (isDark) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      toggle.checked = true;
+    }
+  });
+
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      db.setSetting('darkMode', true);
+      try { localStorage.setItem('cw_darkMode', 'true'); } catch {}
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      db.setSetting('darkMode', false);
+      try { localStorage.setItem('cw_darkMode', 'false'); } catch {}
+    }
   });
 }
 

@@ -1251,6 +1251,178 @@ body {
   font-size: 12px;
 }
 
+/* ===== Toggle Switch ===== */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--gray-700);
+}
+
+.toggle-input {
+  display: none;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  background: var(--gray-300);
+  border-radius: 14px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.toggle-input:checked + .toggle-switch {
+  background: var(--primary);
+}
+
+.toggle-input:checked + .toggle-switch::after {
+  transform: translateX(20px);
+}
+
+/* ===== Dark Mode ===== */
+[data-theme="dark"] {
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --primary-light: #1e3a5f;
+  --danger: #ef4444;
+  --danger-light: #3b1515;
+  --success: #22c55e;
+  --success-light: #14332a;
+  --warning: #f59e0b;
+  --warning-light: #3b2f14;
+  --gray-50: #111827;
+  --gray-100: #1f2937;
+  --gray-200: #374151;
+  --gray-300: #4b5563;
+  --gray-400: #6b7280;
+  --gray-500: #9ca3af;
+  --gray-600: #d1d5db;
+  --gray-700: #e5e7eb;
+  --gray-800: #f3f4f6;
+  --gray-900: #f9fafb;
+  --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.4), 0 4px 6px rgba(0,0,0,0.3);
+  color-scheme: dark;
+}
+
+[data-theme="dark"] .view-header,
+[data-theme="dark"] .tab-bar {
+  background: #1f2937;
+}
+
+[data-theme="dark"] .settings-section,
+[data-theme="dark"] .listing-item,
+[data-theme="dark"] .recent-scan-item,
+[data-theme="dark"] .card-tile,
+[data-theme="dark"] .modal {
+  background: #1f2937;
+}
+
+[data-theme="dark"] .scan-btn {
+  background: #1f2937;
+  border-color: var(--gray-300);
+  color: var(--gray-500);
+}
+
+[data-theme="dark"] .form-group input,
+[data-theme="dark"] .form-group select,
+[data-theme="dark"] .form-group textarea,
+[data-theme="dark"] .search-input,
+[data-theme="dark"] .input-with-btn input,
+[data-theme="dark"] .sort-row select,
+[data-theme="dark"] .inline-price-input {
+  background: #111827;
+  color: #f9fafb;
+  border-color: #4b5563;
+}
+
+[data-theme="dark"] .mode-btn {
+  color: #9ca3af;
+}
+
+[data-theme="dark"] .mode-btn.active {
+  background: #374151;
+  color: #3b82f6;
+}
+
+[data-theme="dark"] .pill {
+  background: #1f2937;
+  border-color: #4b5563;
+  color: #d1d5db;
+}
+
+[data-theme="dark"] .pill.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+[data-theme="dark"] .btn-secondary {
+  background: #374151;
+  color: #e5e7eb;
+  border-color: #4b5563;
+}
+
+[data-theme="dark"] .add-back-btn {
+  background: #111827;
+  border-color: #4b5563;
+  color: #6b7280;
+}
+
+[data-theme="dark"] .valuation-badge {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+}
+
+[data-theme="dark"] .toast {
+  background: #374151;
+}
+
+[data-theme="dark"] .loading-overlay {
+  background: rgba(0,0,0,0.7);
+}
+
+[data-theme="dark"] .modal-overlay {
+  background: rgba(0,0,0,0.7);
+}
+
+[data-theme="dark"] .status-listed { background: #1e3a5f; color: #60a5fa; }
+[data-theme="dark"] .status-sold { background: #14332a; color: #4ade80; }
+[data-theme="dark"] .status-unsold { background: #3b2f14; color: #fbbf24; }
+[data-theme="dark"] .status-exported { background: #374151; color: #9ca3af; }
+
+[data-theme="dark"] .ebay-status-badge { background: #14332a; color: #4ade80; }
+[data-theme="dark"] .ebay-listed-badge { background: #1e3a5f; color: #60a5fa; }
+[data-theme="dark"] .sync-badge { background: #14332a; color: #4ade80; }
+[data-theme="dark"] .sync-badge.syncing { background: #3b2f14; color: #fbbf24; }
+[data-theme="dark"] .sync-badge.error { background: #3b1515; color: #f87171; }
+
+[data-theme="dark"] .recent-scan-mode.listing { background: #3b2f14; color: #fbbf24; }
+[data-theme="dark"] .recent-scan-mode.collection { background: #1e3a5f; color: #60a5fa; }
+
+[data-theme="dark"] .format-option:has(input:checked) {
+  border-color: #3b82f6;
+  background: #1e3a5f;
+}
+
 /* ===== Responsive ===== */
 @media (min-width: 768px) {
   .collection-grid {
