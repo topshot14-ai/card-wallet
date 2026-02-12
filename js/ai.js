@@ -21,9 +21,7 @@ const SYSTEM_PROMPT = `You are a sports trading card identification and valuatio
   "serialNumber": "serial numbering if visible (e.g., /99, /25), empty string if not numbered",
   "graded": "Yes or No",
   "gradeCompany": "PSA, BGS, SGC, CGC, or empty string",
-  "gradeValue": "numeric grade value or empty string",
-  "estimatedValueLow": number,
-  "estimatedValueHigh": number
+  "gradeValue": "numeric grade value or empty string"
 }
 
 Important rules:
@@ -35,15 +33,7 @@ Important rules:
 - For attributes, include RC (Rookie Card) only if there is a clear RC designation on the card
 - If you cannot determine a field, use an empty string or empty array
 - Be as specific as possible about the set name and parallel
-- For serial numbers, include the slash (e.g., "/99" not "99")
-- For estimatedValueLow and estimatedValueHigh, estimate the card's current market value based on SOLD/COMPLETED prices (what cards actually sell for), NOT active listing or asking prices. Sold prices are typically 30-50% lower than listing prices. Use these conservative anchors:
-  * Common base cards (no parallel, no RC, no auto): $0.25-$0.50
-  * Star player base cards (no parallel, no RC, no auto): $0.50-$2.00
-  * Common parallels (numbered /199 or higher, non-star players): $1-$5
-  * Rookie cards (RC, non-auto, non-numbered): $1-$10 depending on player profile
-  * Only exceed $10 for genuinely premium cards: low serial numbers (/25 or less), autographs, major star RCs, or high-grade slabs of key cards
-  * When uncertain, round DOWN — it is better to underestimate than overestimate
-  Factor in player, year, set, parallel, attributes (RC, Auto, etc.), serial numbering, rarity, and condition/grade. If graded, factor in the grade. If you truly cannot estimate, use 0 for both.`;
+- For serial numbers, include the slash (e.g., "/99" not "99")`;
 
 /**
  * Identify a card from front (required) and back (optional) images.
@@ -186,13 +176,9 @@ function normalizeCardData(cardData) {
   if (!Array.isArray(cardData.attributes)) {
     cardData.attributes = [];
   }
-  // Validate and normalize value estimates
-  cardData.estimatedValueLow = parseFloat(cardData.estimatedValueLow) || null;
-  cardData.estimatedValueHigh = parseFloat(cardData.estimatedValueHigh) || null;
-  if (cardData.estimatedValueLow !== null && cardData.estimatedValueHigh !== null
-      && cardData.estimatedValueLow > cardData.estimatedValueHigh) {
-    [cardData.estimatedValueLow, cardData.estimatedValueHigh] = [cardData.estimatedValueHigh, cardData.estimatedValueLow];
-  }
+  // Remove any AI-guessed estimates — we use real sold data instead
+  delete cardData.estimatedValueLow;
+  delete cardData.estimatedValueHigh;
   // Ensure string fields are strings
   for (const key of ['sport', 'year', 'brand', 'setName', 'subset', 'parallel', 'cardNumber', 'player', 'team', 'serialNumber', 'graded', 'gradeCompany', 'gradeValue']) {
     if (cardData[key] !== undefined && cardData[key] !== null) {

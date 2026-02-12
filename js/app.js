@@ -265,8 +265,8 @@ async function handleIdentify() {
     graded: aiData.graded || 'No',
     gradeCompany: aiData.gradeCompany || '',
     gradeValue: aiData.gradeValue || '',
-    estimatedValueLow: aiData.estimatedValueLow || null,
-    estimatedValueHigh: aiData.estimatedValueHigh || null,
+    estimatedValueLow: null,
+    estimatedValueHigh: null,
     condition: defaults.condition,
     startPrice: defaults.startPrice,
     imageBlob: stagedFront.imageBlob,
@@ -321,6 +321,9 @@ async function handleIdentify() {
 
   populateReviewForm(currentCard);
   showView('view-review');
+
+  // Auto-fetch real sold prices in the background
+  autoFetchSoldPrices(currentCard);
 }
 
 async function handleReviewAddBack(e) {
@@ -880,6 +883,61 @@ function displaySoldPrices(data) {
 
   resultsEl.classList.remove('hidden');
   $('#btn-use-suggested').classList.remove('hidden');
+}
+
+// Auto-fetch sold prices after scan (non-blocking)
+async function autoFetchSoldPrices(card) {
+  const workerUrl = await db.getSetting('ebayWorkerUrl');
+  if (!workerUrl) return; // No worker configured, skip silently
+
+  const parts = [];
+  if (card.year) parts.push(card.year);
+  if (card.brand) parts.push(card.brand);
+  if (card.setName) parts.push(card.setName);
+  if (card.player) parts.push(card.player);
+  if (card.parallel) parts.push(card.parallel);
+  if (card.cardNumber) parts.push(`#${card.cardNumber}`);
+
+  const query = parts.join(' ');
+  if (!query.trim()) return;
+
+  try {
+    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}`);
+    if (!resp.ok) return;
+
+    const data = await resp.json();
+    if (!data.stats || data.stats.count === 0) return;
+
+    // Use real sold data as the estimated value
+    card.estimatedValueLow = data.stats.low;
+    card.estimatedValueHigh = data.stats.high;
+
+    // Update the valuation badge on the review screen
+    const valuationBadge = $('#review-valuation-badge');
+    if (valuationBadge) {
+      const low = data.stats.low.toFixed(2);
+      const high = data.stats.high.toFixed(2);
+      const median = data.stats.median.toFixed(2);
+      valuationBadge.innerHTML = `Sold: $${low} – $${high} (median $${median})<br><span style="font-size:11px;font-weight:400;opacity:0.85">Based on ${data.stats.count} recent sale${data.stats.count > 1 ? 's' : ''}</span>`;
+      valuationBadge.classList.remove('hidden');
+    }
+
+    // Also populate the sold prices results section
+    displaySoldPrices(data);
+
+    // Auto-set suggested price for listings
+    if (card.mode === 'listing' && data.stats.median) {
+      card.startPrice = data.stats.median;
+      $('#field-startPrice').value = data.stats.median.toFixed(2);
+    }
+
+    if (currentCard && currentCard.id === card.id) {
+      currentCard.estimatedValueLow = card.estimatedValueLow;
+      currentCard.estimatedValueHigh = card.estimatedValueHigh;
+    }
+  } catch {
+    // Silently fail — user can still manually check sold prices
+  }
 }
 
 function applySuggestedPrice() {
