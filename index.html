@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Card Wallet</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-spinner"></div>
+    <p id="loading-text">Processing...</p>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Modal Container -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <h3 id="modal-title"></h3>
+      <p id="modal-message"></p>
+      <div id="modal-actions" class="modal-actions"></div>
+    </div>
+  </div>
+
+  <!-- ===== SCAN VIEW ===== -->
+  <div id="view-scan" class="view active">
+    <header class="view-header">
+      <h1>Scan Card</h1>
+    </header>
+    <div class="view-content scan-content">
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <button id="mode-listing" class="mode-btn active" data-mode="listing">List It</button>
+        <button id="mode-collection" class="mode-btn" data-mode="collection">Collect It</button>
+      </div>
+
+      <!-- Scan Buttons: Front + Back -->
+      <div class="scan-area">
+        <div class="scan-pair">
+          <div class="scan-slot" id="scan-slot-front">
+            <label class="scan-btn" for="camera-input-front">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span>Front</span>
+            </label>
+            <img id="scan-preview-front" class="scan-preview hidden" alt="Front preview">
+            <button id="scan-clear-front" class="scan-clear-btn hidden">&times;</button>
+          </div>
+          <div class="scan-slot" id="scan-slot-back">
+            <label class="scan-btn scan-btn-back" for="camera-input-back">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span>Back (optional)</span>
+            </label>
+            <img id="scan-preview-back" class="scan-preview hidden" alt="Back preview">
+            <button id="scan-clear-back" class="scan-clear-btn hidden">&times;</button>
+          </div>
+        </div>
+        <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden">
+        <input type="file" id="camera-input-back" accept="image/*" capture="environment" class="hidden">
+        <button id="btn-identify" class="btn btn-primary identify-btn hidden">Identify Card</button>
+      </div>
+
+      <!-- Recent Scans -->
+      <div class="recent-scans">
+        <h3>Recent Scans</h3>
+        <div id="recent-scans-list" class="recent-scans-list">
+          <p class="empty-state">No cards scanned yet. Tap the camera to start!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CARD REVIEW VIEW ===== -->
+  <div id="view-review" class="view">
+    <header class="view-header">
+      <button id="review-back" class="header-btn">&#8592; Back</button>
+      <h1>Review Card</h1>
+      <button id="review-save" class="header-btn primary">Save</button>
+    </header>
+    <div class="view-content review-content">
+      <!-- Card Image Previews (front + back) -->
+      <div class="review-images">
+        <div class="review-image-container">
+          <span class="image-label">Front</span>
+          <img id="review-image-front" src="" alt="Card front">
+        </div>
+        <div class="review-image-container">
+          <span class="image-label">Back</span>
+          <img id="review-image-back" src="" alt="Card back" class="hidden">
+          <label class="add-back-btn hidden" id="review-add-back-label" for="review-add-back-input">+ Add Back</label>
+          <input type="file" id="review-add-back-input" accept="image/*" capture="environment" class="hidden">
+        </div>
+      </div>
+
+      <!-- Valuation Badge -->
+      <div id="review-valuation-badge" class="valuation-badge hidden"></div>
+
+      <!-- Card Fields -->
+      <form id="review-form" class="review-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="field-sport">Sport</label>
+            <select id="field-sport">
+              <option value="">Select...</option>
+              <option value="Baseball">Baseball</option>
+              <option value="Basketball">Basketball</option>
+              <option value="Football">Football</option>
+              <option value="Hockey">Hockey</option>
+              <option value="Soccer">Soccer</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="field-year">Year</label>
+            <input type="text" id="field-year" placeholder="2023">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-brand">Brand</label>
+          <input type="text" id="field-brand" placeholder="Topps, Panini, Upper Deck...">
+        </div>
+
+        <div class="form-group">
+          <label for="field-setName">Set Name</label>
+          <input type="text" id="field-setName" placeholder="Chrome, Prizm, Select...">
+        </div>
+
+        <div class="form-group">
+          <label for="field-subset">Subset / Insert</label>
+          <input type="text" id="field-subset" placeholder="Rookie, All-Star, Base...">
+        </div>
+
+        <div class="form-group">
+          <label for="field-parallel">Parallel / Variation</label>
+          <input type="text" id="field-parallel" placeholder="Refractor, Silver, Gold...">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="field-cardNumber">Card #</label>
+            <input type="text" id="field-cardNumber" placeholder="123">
+          </div>
+          <div class="form-group">
+            <label for="field-serialNumber">Serial #</label>
+            <input type="text" id="field-serialNumber" placeholder="/99">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-player">Player / Subject</label>
+          <input type="text" id="field-player" placeholder="Mike Trout">
+        </div>
+
+        <div class="form-group">
+          <label for="field-team">Team</label>
+          <input type="text" id="field-team" placeholder="Los Angeles Angels">
+        </div>
+
+        <div class="form-group">
+          <label for="field-attributes">Attributes</label>
+          <input type="text" id="field-attributes" placeholder="RC, Auto, Patch, Mem... (comma separated)">
+        </div>
+
+        <!-- Grading Section -->
+        <div class="form-section">
+          <h3>Grading</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="field-graded">Graded?</label>
+              <select id="field-graded">
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="field-gradeCompany">Company</label>
+              <select id="field-gradeCompany">
+                <option value="">N/A</option>
+                <option value="PSA">PSA</option>
+                <option value="BGS">BGS</option>
+                <option value="SGC">SGC</option>
+                <option value="CGC">CGC</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="field-gradeValue">Grade</label>
+              <input type="text" id="field-gradeValue" placeholder="10">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-condition">Condition</label>
+          <select id="field-condition">
+            <option value="Near Mint or Better">Near Mint or Better</option>
+            <option value="Excellent">Excellent</option>
+            <option value="Very Good">Very Good</option>
+            <option value="Good">Good</option>
+            <option value="Fair">Fair</option>
+            <option value="Poor">Poor</option>
+          </select>
+        </div>
+
+        <!-- eBay Title (Listing mode) -->
+        <div id="listing-fields" class="form-section">
+          <h3>Listing Details</h3>
+          <div class="form-group">
+            <label for="field-ebayTitle">eBay Title <span id="title-char-count" class="char-count">(0/80)</span></label>
+            <input type="text" id="field-ebayTitle" maxlength="80" placeholder="Auto-generated title">
+          </div>
+          <div class="form-group">
+            <label for="field-startPrice">Start Price ($)</label>
+            <input type="number" id="field-startPrice" step="0.01" placeholder="0.99">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-notes">Notes</label>
+          <textarea id="field-notes" rows="2" placeholder="Any additional notes..."></textarea>
+        </div>
+
+        <!-- Comp Lookup -->
+        <div class="comp-section">
+          <button type="button" id="btn-lookup-comps" class="btn btn-secondary">Look Up Comps</button>
+          <div id="comp-results" class="comp-results hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="field-compLow">Comp Low</label>
+                <input type="number" id="field-compLow" step="0.01" placeholder="$">
+              </div>
+              <div class="form-group">
+                <label for="field-compAvg">Comp Avg</label>
+                <input type="number" id="field-compAvg" step="0.01" placeholder="$">
+              </div>
+              <div class="form-group">
+                <label for="field-compHigh">Comp High</label>
+                <input type="number" id="field-compHigh" step="0.01" placeholder="$">
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== LISTINGS VIEW ===== -->
+  <div id="view-listings" class="view">
+    <header class="view-header">
+      <h1>Listings</h1>
+      <button id="btn-export-csv" class="header-btn primary">Export CSV</button>
+    </header>
+    <div class="view-content">
+      <div class="listings-toolbar">
+        <label class="select-all-label">
+          <input type="checkbox" id="listings-select-all"> Select All
+        </label>
+        <span id="listings-count" class="badge">0</span>
+        <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden">Delete Selected</button>
+      </div>
+      <div id="listings-list" class="listings-list">
+        <p class="empty-state">No listings yet. Scan cards in "List It" mode to add them here.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== COLLECTION VIEW ===== -->
+  <div id="view-collection" class="view">
+    <header class="view-header">
+      <h1>Collection</h1>
+      <span id="collection-count" class="header-badge">0</span>
+    </header>
+    <div class="view-content">
+      <div class="collection-toolbar">
+        <input type="search" id="collection-search" placeholder="Search cards..." class="search-input">
+        <div class="filter-pills" id="filter-pills">
+          <button class="pill active" data-filter="all">All</button>
+          <button class="pill" data-filter="Baseball">Baseball</button>
+          <button class="pill" data-filter="Basketball">Basketball</button>
+          <button class="pill" data-filter="Football">Football</button>
+          <button class="pill" data-filter="Hockey">Hockey</button>
+        </div>
+        <div class="sort-row">
+          <select id="collection-sort">
+            <option value="dateAdded-desc">Newest First</option>
+            <option value="dateAdded-asc">Oldest First</option>
+            <option value="player-asc">Player A-Z</option>
+            <option value="player-desc">Player Z-A</option>
+            <option value="year-desc">Year (Newest)</option>
+            <option value="year-asc">Year (Oldest)</option>
+          </select>
+        </div>
+      </div>
+      <div id="collection-grid" class="collection-grid">
+        <p class="empty-state">Your collection is empty. Scan cards in "Collect It" mode to add them here.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CARD DETAIL VIEW ===== -->
+  <div id="view-detail" class="view">
+    <header class="view-header">
+      <button id="detail-back" class="header-btn">&#8592; Back</button>
+      <h1>Card Details</h1>
+      <button id="detail-edit" class="header-btn">Edit</button>
+    </header>
+    <div class="view-content detail-content" id="detail-content">
+      <!-- Populated dynamically -->
+    </div>
+  </div>
+
+  <!-- ===== SETTINGS VIEW ===== -->
+  <div id="view-settings" class="view">
+    <header class="view-header">
+      <h1>Settings</h1>
+    </header>
+    <div class="view-content settings-content">
+      <!-- Account — always visible, first thing you see -->
+      <div id="settings-account" class="settings-section">
+        <h3>Account</h3>
+        <!-- Not-configured state -->
+        <div id="auth-not-configured" class="hidden">
+          <p class="auth-setup-msg">Set up Firebase in Advanced settings below to enable cloud sync and sign-in.</p>
+        </div>
+        <!-- Signed-out state -->
+        <div id="auth-signed-out" class="hidden">
+          <div class="form-group">
+            <label for="auth-email">Email</label>
+            <input type="email" id="auth-email" placeholder="you@example.com">
+          </div>
+          <div class="form-group">
+            <label for="auth-password">Password</label>
+            <input type="password" id="auth-password" placeholder="Password">
+          </div>
+          <div class="btn-group-vertical" style="margin-top:8px">
+            <button type="button" id="btn-sign-in" class="btn btn-primary">Sign In</button>
+            <button type="button" id="btn-create-account" class="btn btn-secondary">Create Account</button>
+            <button type="button" id="btn-google-sign-in" class="btn btn-secondary">Sign In with Google</button>
+          </div>
+        </div>
+        <!-- Signed-in state -->
+        <div id="auth-signed-in" class="hidden">
+          <div class="auth-user-info">
+            <span id="auth-user-email" class="auth-email"></span>
+            <span id="auth-sync-badge" class="sync-badge">Synced</span>
+          </div>
+          <div class="btn-group-vertical" style="margin-top:8px">
+            <button type="button" id="btn-sync-now" class="btn btn-secondary">Sync Now</button>
+            <button type="button" id="btn-sign-out" class="btn btn-danger">Sign Out</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>API Configuration</h3>
+        <div class="form-group">
+          <label for="setting-api-key">Claude API Key</label>
+          <div class="input-with-btn">
+            <input type="password" id="setting-api-key" placeholder="sk-ant-...">
+            <button type="button" id="btn-toggle-api-key" class="btn btn-sm">Show</button>
+          </div>
+          <small>Your key is stored locally and never sent anywhere except Anthropic's API.</small>
+        </div>
+        <div class="form-group">
+          <label for="setting-model">Model</label>
+          <select id="setting-model">
+            <option value="claude-sonnet-4-20250514">Claude Sonnet (Recommended)</option>
+            <option value="claude-haiku-4-20250414">Claude Haiku (Cheaper)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Defaults</h3>
+        <div class="form-group">
+          <label for="setting-default-sport">Default Sport</label>
+          <select id="setting-default-sport">
+            <option value="">None</option>
+            <option value="Baseball">Baseball</option>
+            <option value="Basketball">Basketball</option>
+            <option value="Football">Football</option>
+            <option value="Hockey">Hockey</option>
+            <option value="Soccer">Soccer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="setting-default-condition">Default Condition</label>
+          <select id="setting-default-condition">
+            <option value="Near Mint or Better">Near Mint or Better</option>
+            <option value="Excellent">Excellent</option>
+            <option value="Very Good">Very Good</option>
+            <option value="Good">Good</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="setting-default-price">Default Start Price ($)</label>
+          <input type="number" id="setting-default-price" step="0.01" value="0.99">
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Data Management</h3>
+        <div class="btn-group-vertical">
+          <button id="btn-export-data" class="btn btn-secondary">Export All Data (JSON)</button>
+          <label class="btn btn-secondary">
+            Import Data (JSON)
+            <input type="file" id="btn-import-data" accept=".json" class="hidden">
+          </label>
+          <button id="btn-clear-data" class="btn btn-danger">Clear All Data</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Stats</h3>
+        <div id="settings-stats" class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-value" id="stat-total">0</span>
+            <span class="stat-label">Total Cards</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="stat-listings">0</span>
+            <span class="stat-label">Listings</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="stat-collection">0</span>
+            <span class="stat-label">Collection</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced: Firebase config tucked at bottom -->
+      <div class="settings-section">
+        <h3>Advanced</h3>
+        <div class="form-group">
+          <label for="setting-firebase-config">Firebase Config (JSON)</label>
+          <textarea id="setting-firebase-config" rows="3" placeholder='{"apiKey":"...","projectId":"...","authDomain":"...","storageBucket":"...","appId":"..."}'></textarea>
+          <small>Paste your Firebase web app config to enable cloud sync.</small>
+        </div>
+        <button type="button" id="btn-save-firebase-config" class="btn btn-primary btn-sm">Save Firebase Config</button>
+      </div>
+
+      <p class="app-version">Card Wallet v2.0</p>
+    </div>
+  </div>
+
+  <!-- ===== BOTTOM TAB BAR ===== -->
+  <nav class="tab-bar">
+    <button class="tab active" data-view="scan">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <span>Scan</span>
+    </button>
+    <button class="tab" data-view="listings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+        <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+      </svg>
+      <span>Listings</span>
+    </button>
+    <button class="tab" data-view="collection">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      </svg>
+      <span>Collection</span>
+    </button>
+    <button class="tab" data-view="settings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Firebase Compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+
+  <!-- Scripts -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

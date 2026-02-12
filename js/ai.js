@@ -1,0 +1,129 @@
+// Claude Vision API call for card identification
+
+import { getSetting } from './db.js';
+import { stripDataUri } from './camera.js';
+
+const API_URL = 'https://api.anthropic.com/v1/messages';
+
+const SYSTEM_PROMPT = `You are a sports trading card identification and valuation expert. Analyze the card image and return a JSON object with these fields:
+
+{
+  "sport": "Baseball|Basketball|Football|Hockey|Soccer|Other",
+  "year": "four digit year the card was produced",
+  "brand": "manufacturer name (Topps, Panini, Upper Deck, etc.)",
+  "setName": "the specific set name (Chrome, Prizm, Select, etc.)",
+  "subset": "insert set or subset name if applicable, or 'Base' for base cards",
+  "parallel": "parallel or variation name if applicable (Refractor, Silver, Gold, etc.), empty string if base",
+  "cardNumber": "the card number as printed on the card",
+  "player": "full name of the player or subject on the card",
+  "team": "team name",
+  "attributes": ["array of attributes like RC, Auto, Patch, Mem, SP, SSP, etc."],
+  "serialNumber": "serial numbering if visible (e.g., /99, /25), empty string if not numbered",
+  "graded": "Yes or No",
+  "gradeCompany": "PSA, BGS, SGC, CGC, or empty string",
+  "gradeValue": "numeric grade value or empty string",
+  "estimatedValueLow": number,
+  "estimatedValueHigh": number
+}
+
+Important rules:
+- Return ONLY valid JSON, no markdown formatting or extra text
+- For year, use the product release year, not the season year (e.g., 2023 Topps released in 2023)
+- For attributes, include RC (Rookie Card) only if there is a clear RC designation on the card
+- If you cannot determine a field, use an empty string or empty array
+- Be as specific as possible about the set name and parallel
+- For serial numbers, include the slash (e.g., "/99" not "99")
+- For estimatedValueLow and estimatedValueHigh, provide your best estimate of the card's current market value range in USD as numbers (no dollar signs). Base your estimate on the player, year, set, parallel, attributes (RC, Auto, etc.), serial numbering, rarity, and condition/grade. If graded, factor in the grade. For common base cards use 0.25-1.00 range. If you truly cannot estimate, use 0 for both.`;
+
+/**
+ * Identify a card from front (required) and back (optional) images.
+ * @param {string} frontBase64 - data URI for front image
+ * @param {string|null} backBase64 - data URI for back image (optional)
+ */
+export async function identifyCard(frontBase64, backBase64 = null) {
+  const apiKey = await getSetting('apiKey');
+  if (!apiKey) {
+    throw new Error('API key not set. Please add your Claude API key in Settings.');
+  }
+
+  const model = await getSetting('model') || 'claude-sonnet-4-20250514';
+  const frontContent = stripDataUri(frontBase64);
+
+  const imageBlocks = [
+    {
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: frontContent }
+    }
+  ];
+
+  if (backBase64) {
+    imageBlocks.push({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: stripDataUri(backBase64) }
+    });
+  }
+
+  const promptText = backBase64
+    ? 'Here are the front and back of a sports trading card. Use both images to identify it accurately. The back often has the card number, set info, and serial number. Return only JSON.'
+    : 'Identify this sports trading card. Return only JSON.';
+
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            ...imageBlocks,
+            { type: 'text', text: promptText }
+          ]
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`API error (${response.status}): ${errBody}`);
+  }
+
+  const result = await response.json();
+  const text = result.content[0].text;
+
+  // Parse JSON from response (handle potential markdown wrapping)
+  let jsonStr = text;
+  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1];
+  }
+
+  try {
+    const cardData = JSON.parse(jsonStr.trim());
+    // Ensure attributes is always an array
+    if (typeof cardData.attributes === 'string') {
+      cardData.attributes = cardData.attributes ? [cardData.attributes] : [];
+    }
+    if (!Array.isArray(cardData.attributes)) {
+      cardData.attributes = [];
+    }
+    // Validate and normalize value estimates
+    cardData.estimatedValueLow = parseFloat(cardData.estimatedValueLow) || null;
+    cardData.estimatedValueHigh = parseFloat(cardData.estimatedValueHigh) || null;
+    if (cardData.estimatedValueLow !== null && cardData.estimatedValueHigh !== null
+        && cardData.estimatedValueLow > cardData.estimatedValueHigh) {
+      [cardData.estimatedValueLow, cardData.estimatedValueHigh] = [cardData.estimatedValueHigh, cardData.estimatedValueLow];
+    }
+    return cardData;
+  } catch (parseErr) {
+    throw new Error('Failed to parse AI response: ' + text.substring(0, 200));
+  }
+}
