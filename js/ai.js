@@ -28,7 +28,9 @@ const SYSTEM_PROMPT = `You are a sports trading card identification and valuatio
 
 Important rules:
 - Return ONLY valid JSON, no markdown formatting or extra text
-- For year, use the product release year, not the season year (e.g., 2023 Topps released in 2023)
+- ALWAYS read text printed on the card before guessing. The back of the card typically prints the brand, set name, year, card number, and legal text. Use this printed information as your primary source — do NOT guess the set from visual appearance alone.
+- For year, use the product release year, not the season year (e.g., 2023 Topps released in 2023). Check the copyright year on the back.
+- For setName, read it from the card back or front. Many sets look similar visually (e.g., Prizm vs Select vs Optic) — rely on what is printed, not appearance.
 - For attributes, include RC (Rookie Card) only if there is a clear RC designation on the card
 - If you cannot determine a field, use an empty string or empty array
 - Be as specific as possible about the set name and parallel
@@ -64,7 +66,7 @@ export async function identifyCard(frontBase64, backBase64 = null) {
   }
 
   const promptText = backBase64
-    ? 'Here are the front and back of a sports trading card. Use both images to identify it accurately. The back often has the card number, set info, and serial number. Return only JSON.'
+    ? 'Here are the front and back of a sports trading card. IMPORTANT: Carefully read ALL text on the back of the card first — it typically prints the exact brand, set name, year, card number, and copyright info. Use that printed text as your primary source for identification rather than visual appearance. Return only JSON.'
     : 'Identify this sports trading card. Return only JSON.';
 
   const response = await fetch(API_URL, {
