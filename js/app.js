@@ -7,7 +7,6 @@ import { identifyCard } from './ai.js';
 import { createCard, generateEbayTitle, cardDisplayName, cardDetailLine } from './card-model.js';
 import { initListings, refreshListings } from './listing.js';
 import { initCollection, refreshCollection } from './collection.js';
-import { lookupComps } from './comps.js';
 import { initSettings, refreshStats, getDefaults } from './settings.js';
 import { initFirebase } from './firebase.js';
 import { initAuth } from './auth.js';
@@ -92,7 +91,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#review-back').addEventListener('click', () => goBack());
   $('#review-save').addEventListener('click', saveCurrentCard);
   $('#field-ebayTitle').addEventListener('input', updateCharCount);
-  $('#btn-lookup-comps').addEventListener('click', handleCompLookup);
   $('#btn-check-sold').addEventListener('click', handleCheckSoldPrices);
   $('#btn-use-suggested').addEventListener('click', applySuggestedPrice);
 
@@ -618,33 +616,6 @@ function updateCharCount() {
   const len = input.value.length;
   count.textContent = `(${len}/80)`;
   count.style.color = len > 75 ? 'var(--danger)' : len > 60 ? 'var(--warning)' : 'var(--gray-400)';
-}
-
-// ===== Comp Lookup =====
-
-async function handleCompLookup() {
-  if (!currentCard) return;
-  readFormIntoCard();
-
-  showLoading('Looking up comps...');
-  try {
-    const result = await lookupComps(currentCard);
-    hideLoading();
-
-    if (result.success && result.data) {
-      $('#comp-results').classList.remove('hidden');
-      currentCard.compLookedUpAt = new Date().toISOString();
-      toast('Comp data loaded', 'success');
-    } else {
-      // Opened in new tab
-      $('#comp-results').classList.remove('hidden');
-      currentCard.compLookedUpAt = new Date().toISOString();
-      toast('Paste your comp results after checking 130point', 'info', 4000);
-    }
-  } catch (err) {
-    hideLoading();
-    toast('Comp lookup failed: ' + err.message, 'error');
-  }
 }
 
 // ===== Recent Scans =====
