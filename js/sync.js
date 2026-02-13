@@ -315,7 +315,11 @@ export async function deleteCardRemote(cardId) {
 // ===== Settings Sync =====
 
 // Keys to sync to Firestore (excludes sensitive tokens like eBay auth)
-const SYNCED_SETTING_KEYS = ['apiKey', 'model', 'defaultSport', 'defaultCondition', 'defaultPrice', 'ebayWorkerUrl'];
+const SYNCED_SETTING_KEYS = [
+  'apiKey', 'model', 'defaultSport', 'defaultCondition', 'defaultPrice',
+  'ebayWorkerUrl', 'ebayClientId', 'ebayRuName',
+  'ebayAccessToken', 'ebayRefreshToken', 'ebayTokenExpiry', 'ebayConnected',
+];
 
 export async function pushSettings() {
   if (!isFirebaseConfigured()) return;
