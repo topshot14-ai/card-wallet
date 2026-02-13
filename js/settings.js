@@ -243,6 +243,16 @@ async function loadSettings() {
 
   const defaultPrice = await db.getSetting('defaultPrice');
   if (defaultPrice) $('#setting-default-price').value = defaultPrice;
+
+  // eBay settings
+  const ebayWorkerUrl = await db.getSetting('ebayWorkerUrl');
+  if (ebayWorkerUrl) $('#setting-ebay-worker-url').value = ebayWorkerUrl;
+
+  const ebayClientId = await db.getSetting('ebayClientId');
+  if (ebayClientId) $('#setting-ebay-client-id').value = ebayClientId;
+
+  const ebayRuName = await db.getSetting('ebayRuName');
+  if (ebayRuName) $('#setting-ebay-runame').value = ebayRuName;
 }
 
 export async function refreshStats() {
