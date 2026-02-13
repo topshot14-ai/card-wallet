@@ -26,6 +26,11 @@ export function getFirestore() {
   return firebase.firestore();
 }
 
+export function getStorage() {
+  if (!firebaseConfigured) return null;
+  return firebase.storage();
+}
+
 export async function initFirebase() {
   // Check if Firebase SDK is loaded
   if (typeof firebase === 'undefined') {

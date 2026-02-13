@@ -1,7 +1,7 @@
 // Sync layer — Firestore push/pull with IndexedDB as local cache
-// No Firebase Storage — thumbnails stored as base64 in Firestore docs, full images stay local only
+// Full images synced via Firebase Storage, thumbnails in Firestore docs
 
-import { isFirebaseConfigured, getFirestore } from './firebase.js';
+import { isFirebaseConfigured, getFirestore, getStorage } from './firebase.js';
 import { getCurrentUser } from './auth.js';
 import { saveCardLocal, getAllCards, getSetting, setSetting, getAllSettings } from './db.js';
 
@@ -27,12 +27,114 @@ function cardToFirestoreDoc(card) {
     }
   }
   // Store thumbnails in Firestore (small enough at ~5-15KB base64)
-  // Full images (imageBlob, imageBackBlob) stay local only
+  // Full images (imageBlob, imageBackBlob) go to Firebase Storage
   return doc;
 }
 
 function firestoreDocToCard(doc) {
   return { ...doc };
+}
+
+// ===== Image Storage Helpers =====
+
+/**
+ * Upload a card's full images to Firebase Storage.
+ * Stores at users/{uid}/cards/{cardId}/front.jpg and back.jpg.
+ * Returns { imageStorageUrl, imageBackStorageUrl } with download URLs.
+ */
+async function uploadCardImages(uid, card) {
+  const storage = getStorage();
+  if (!storage) return {};
+
+  const urls = {};
+
+  // Upload front image if it exists and hasn't been uploaded yet
+  if (card.imageBlob && !card.imageStorageUrl) {
+    try {
+      const ref = storage.ref(`users/${uid}/cards/${card.id}/front.jpg`);
+      await ref.putString(card.imageBlob, 'data_url');
+      urls.imageStorageUrl = await ref.getDownloadURL();
+    } catch (err) {
+      console.error('Failed to upload front image:', err);
+    }
+  }
+
+  // Upload back image if it exists and hasn't been uploaded yet
+  if (card.imageBackBlob && !card.imageBackStorageUrl) {
+    try {
+      const ref = storage.ref(`users/${uid}/cards/${card.id}/back.jpg`);
+      await ref.putString(card.imageBackBlob, 'data_url');
+      urls.imageBackStorageUrl = await ref.getDownloadURL();
+    } catch (err) {
+      console.error('Failed to upload back image:', err);
+    }
+  }
+
+  return urls;
+}
+
+/**
+ * Download card images from Firebase Storage URLs into base64 data URIs.
+ * Returns { imageBlob, imageBackBlob } for fields that were downloaded.
+ */
+async function downloadCardImages(card) {
+  const images = {};
+
+  if (card.imageStorageUrl && !card.imageBlob) {
+    try {
+      const resp = await fetch(card.imageStorageUrl);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        images.imageBlob = await blobToBase64(blob);
+      }
+    } catch (err) {
+      console.error('Failed to download front image:', err);
+    }
+  }
+
+  if (card.imageBackStorageUrl && !card.imageBackBlob) {
+    try {
+      const resp = await fetch(card.imageBackStorageUrl);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        images.imageBackBlob = await blobToBase64(blob);
+      }
+    } catch (err) {
+      console.error('Failed to download back image:', err);
+    }
+  }
+
+  return images;
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Failed to convert blob'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Delete card images from Firebase Storage.
+ */
+async function deleteCardImages(uid, cardId) {
+  const storage = getStorage();
+  if (!storage) return;
+
+  const paths = [
+    `users/${uid}/cards/${cardId}/front.jpg`,
+    `users/${uid}/cards/${cardId}/back.jpg`,
+  ];
+
+  for (const path of paths) {
+    try {
+      await storage.ref(path).delete();
+    } catch {
+      // File may not exist — that's fine
+    }
+  }
 }
 
 // ===== Push: Local → Cloud =====
@@ -47,6 +149,19 @@ export async function pushCard(card) {
 
   try {
     setSyncStatus('syncing');
+
+    // Upload images to Firebase Storage if needed
+    const imageUrls = await uploadCardImages(user.uid, card);
+
+    // If new URLs were generated, save them on the card locally and include in Firestore doc
+    if (imageUrls.imageStorageUrl) {
+      card.imageStorageUrl = imageUrls.imageStorageUrl;
+      await saveCardLocal(card);
+    }
+    if (imageUrls.imageBackStorageUrl) {
+      card.imageBackStorageUrl = imageUrls.imageBackStorageUrl;
+      await saveCardLocal(card);
+    }
 
     const doc = cardToFirestoreDoc(card);
     await db.collection('users').doc(user.uid).collection('cards').doc(card.id).set(doc);
@@ -80,6 +195,7 @@ export async function pullAllCards() {
 
     let pullCount = 0;
     let conflictCount = 0;
+    const imagesToDownload = [];
 
     for (const doc of snapshot.docs) {
       const remoteCard = firestoreDocToCard(doc.data());
@@ -89,6 +205,11 @@ export async function pullAllCards() {
         // Card exists remotely but not locally — pull it
         await saveCardLocal(remoteCard);
         pullCount++;
+
+        // Queue image download if URLs exist
+        if (remoteCard.imageStorageUrl || remoteCard.imageBackStorageUrl) {
+          imagesToDownload.push(remoteCard);
+        }
       } else {
         // Both exist — newer wins
         const remoteTime = new Date(remoteCard.lastModified || remoteCard.dateAdded || 0).getTime();
@@ -102,6 +223,16 @@ export async function pullAllCards() {
           if (localCard.imageBackBlob) merged.imageBackBlob = localCard.imageBackBlob;
           await saveCardLocal(merged);
           conflictCount++;
+        }
+
+        // Download images if remote has URLs but local has no blobs
+        if ((remoteCard.imageStorageUrl && !localCard.imageBlob) ||
+            (remoteCard.imageBackStorageUrl && !localCard.imageBackBlob)) {
+          const cardToFetch = { ...localCard, ...remoteCard };
+          // Keep existing local blobs so downloadCardImages only fetches missing ones
+          if (localCard.imageBlob) cardToFetch.imageBlob = localCard.imageBlob;
+          if (localCard.imageBackBlob) cardToFetch.imageBackBlob = localCard.imageBackBlob;
+          imagesToDownload.push(cardToFetch);
         }
       }
     }
@@ -123,10 +254,40 @@ export async function pullAllCards() {
 
     setSyncStatus('idle');
     updateSyncBadge('Synced');
+
+    // Download images in background (non-blocking)
+    if (imagesToDownload.length > 0) {
+      downloadImagesInBackground(imagesToDownload);
+    }
   } catch (err) {
     console.error('Pull all cards failed:', err);
     setSyncStatus('error');
     updateSyncBadge('Sync Error');
+  }
+}
+
+/**
+ * Download images for multiple cards in background.
+ * Updates IndexedDB and refreshes views when done.
+ */
+async function downloadImagesInBackground(cards) {
+  let downloadedCount = 0;
+
+  for (const card of cards) {
+    const images = await downloadCardImages(card);
+
+    if (Object.keys(images).length > 0) {
+      // Merge downloaded images into the card and save locally
+      Object.assign(card, images);
+      await saveCardLocal(card);
+      downloadedCount++;
+    }
+  }
+
+  if (downloadedCount > 0) {
+    // Refresh views so images appear
+    window.dispatchEvent(new CustomEvent('refresh-listings'));
+    window.dispatchEvent(new CustomEvent('refresh-collection'));
   }
 }
 
@@ -141,6 +302,10 @@ export async function deleteCardRemote(cardId) {
   if (!firestore) return;
 
   try {
+    // Delete images from Storage
+    await deleteCardImages(user.uid, cardId);
+
+    // Delete doc from Firestore
     await firestore.collection('users').doc(user.uid).collection('cards').doc(cardId).delete();
   } catch (err) {
     console.error('Delete card remote failed:', err);

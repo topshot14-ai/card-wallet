@@ -1,5 +1,5 @@
 // Service Worker for Card Wallet PWA
-const CACHE_NAME = 'card-wallet-v4.3.5';
+const CACHE_NAME = 'card-wallet-v4.4.0';
 const ASSETS = [
   './',
   './index.html',
@@ -53,7 +53,8 @@ self.addEventListener('fetch', (event) => {
       url.hostname.includes('firebaseio.com') ||
       url.hostname.includes('googleapis.com') ||
       url.hostname.includes('gstatic.com') ||
-      url.hostname.includes('workers.dev')) {
+      url.hostname.includes('workers.dev') ||
+      url.hostname.includes('firebasestorage.googleapis.com')) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(event.request))
     );
