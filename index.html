@@ -110,16 +110,6 @@
         </label>
       </div>
 
-      <!-- Batch Queue (shown when batch mode is on) -->
-      <div id="batch-queue-section" class="hidden">
-        <div id="batch-queue" class="batch-queue"></div>
-        <div style="display:flex;gap:8px;margin-bottom:16px">
-          <label class="btn btn-secondary btn-sm" for="batch-file-input" style="flex:1;cursor:pointer;text-align:center">Upload Multiple Photos</label>
-          <input type="file" id="batch-file-input" accept="image/*" multiple class="hidden">
-          <button id="btn-batch-identify" class="btn btn-primary btn-sm" style="flex:1" disabled>Identify All</button>
-        </div>
-      </div>
-
       <!-- Scan Buttons: Front + Back -->
       <div class="scan-area">
         <div class="scan-pair">
@@ -149,6 +139,17 @@
         <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden">
         <input type="file" id="camera-input-back" accept="image/*" capture="environment" class="hidden">
         <button id="btn-identify" class="btn btn-primary identify-btn hidden">Identify Card</button>
+      </div>
+
+      <!-- Batch Queue (shown when batch mode is on) -->
+      <div id="batch-queue-section" class="hidden">
+        <div id="batch-queue" class="batch-queue"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <label class="btn btn-secondary btn-sm" for="batch-file-input" style="flex:1;cursor:pointer;text-align:center">+ Upload from Gallery</label>
+          <input type="file" id="batch-file-input" accept="image/*" multiple class="hidden">
+          <button id="btn-batch-identify" class="btn btn-primary btn-sm" style="flex:1" disabled>Identify All</button>
+        </div>
+        <p class="batch-hint" style="font-size:12px;color:var(--gray-500);margin:0 0 12px">Snap photos above or upload from gallery. Cards queue up below, then press Identify All.</p>
       </div>
 
       <!-- Recent Scans -->
@@ -613,7 +614,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v3.3</p>
+      <p class="app-version">Card Wallet v3.4</p>
     </div>
   </div>
 

@@ -63,17 +63,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Manual entry button
   $('#btn-manual-entry').addEventListener('click', handleManualEntry);
 
-  // Batch mode toggle
+  // Batch mode toggle — camera stays visible, photos queue up
   $('#batch-mode-toggle').addEventListener('change', (e) => {
     batchMode = e.target.checked;
     const batchSection = document.getElementById('batch-queue-section');
-    const scanArea = document.querySelector('.scan-area');
     if (batchMode) {
       batchSection.classList.remove('hidden');
-      scanArea.classList.add('hidden');
     } else {
       batchSection.classList.add('hidden');
-      scanArea.classList.remove('hidden');
       batchQueue = [];
       renderBatchQueue();
     }
@@ -215,6 +212,23 @@ async function handleStagedPhoto(e, side) {
   const file = e.target.files[0];
   if (!file) return;
   e.target.value = '';
+
+  // In batch mode, front photos go to the queue instead of staging
+  if (batchMode && side === 'front') {
+    showLoading('Adding to batch...');
+    try {
+      const photo = await processPhoto(file);
+      hideLoading();
+      batchQueue.push({ photo, status: 'pending', card: null, error: null });
+      renderBatchQueue();
+      updateBatchIdentifyButton();
+      toast(`Card added to batch (${batchQueue.filter(q => q.status === 'pending').length} ready)`, 'success');
+    } catch (err) {
+      hideLoading();
+      toast('Failed to process photo: ' + err.message, 'error');
+    }
+    return;
+  }
 
   showLoading('Processing photo...');
   try {
