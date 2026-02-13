@@ -90,7 +90,8 @@
       <div id="api-key-gate" class="api-key-gate hidden">
         <div class="gate-icon">&#128273;</div>
         <p><strong>API key needed for AI scanning</strong></p>
-        <p>Add your Claude API key to auto-identify cards. You can still use <strong>Manual Entry</strong> without it.</p>
+        <p>Add your Claude API key to auto-identify cards from photos. Get one at <a href="https://console.anthropic.com/" target="_blank" rel="noopener" style="color:var(--primary);font-weight:500">console.anthropic.com</a>.</p>
+        <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">You can still use <strong>Manual Entry</strong> without a key.</p>
         <button id="gate-go-settings" class="btn btn-primary btn-sm">Go to Settings</button>
       </div>
 
@@ -111,8 +112,8 @@
         <div id="scan-step-front" class="batch-step">
           <div class="batch-step-label">Step 1: Front of Card</div>
           <div class="scan-slot batch-scan-slot" id="scan-slot-front">
-            <label class="scan-btn" for="camera-input-front">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <label class="scan-btn" for="camera-input-front" aria-label="Scan front of card">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
               </svg>
@@ -120,15 +121,15 @@
             </label>
             <img id="scan-preview-front" class="scan-preview hidden" alt="Front preview">
           </div>
-          <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden">
+          <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden" aria-label="Capture front of card">
         </div>
 
         <!-- Step 2: Back -->
         <div id="scan-step-back" class="batch-step hidden">
           <div class="batch-step-label">Step 2: Back of Card</div>
           <div class="scan-slot batch-scan-slot" id="scan-slot-back">
-            <label class="scan-btn" for="camera-input-back">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <label class="scan-btn" for="camera-input-back" aria-label="Scan back of card">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
               </svg>
@@ -136,7 +137,7 @@
             </label>
             <img id="scan-preview-back" class="scan-preview hidden" alt="Back preview">
           </div>
-          <input type="file" id="camera-input-back" accept="image/*" capture="environment" class="hidden">
+          <input type="file" id="camera-input-back" accept="image/*" capture="environment" class="hidden" aria-label="Capture back of card">
           <button id="btn-skip-back" class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%">Skip Back</button>
         </div>
 
@@ -153,7 +154,7 @@
         <!-- Upload from gallery -->
         <div style="margin-top:12px;text-align:center">
           <label class="btn btn-secondary btn-sm" for="gallery-upload" style="cursor:pointer">+ Upload from Gallery</label>
-          <input type="file" id="gallery-upload" accept="image/*" multiple class="hidden">
+          <input type="file" id="gallery-upload" accept="image/*" multiple class="hidden" aria-label="Upload photos from gallery">
         </div>
       </div>
 
@@ -422,6 +423,7 @@
           <button class="pill" data-filter="Basketball">Basketball</button>
           <button class="pill" data-filter="Football">Football</button>
           <button class="pill" data-filter="Hockey">Hockey</button>
+          <button class="pill" data-filter="Soccer">Soccer</button>
         </div>
         <div class="sort-row">
           <select id="collection-sort">
@@ -632,7 +634,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v4.0</p>
+      <p class="app-version">Card Wallet v4.1</p>
     </div>
   </div>
 
@@ -666,7 +668,7 @@
       <span>Collection</span>
     </button>
     <button class="tab" data-view="settings" aria-label="Settings">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>

@@ -116,8 +116,9 @@ body {
   font-size: 15px;
   color: var(--primary);
   cursor: pointer;
-  padding: 8px 4px;
+  padding: 12px 8px;
   min-width: 60px;
+  min-height: 44px;
 }
 
 .header-btn.primary {
@@ -221,12 +222,6 @@ body {
   margin-bottom: 32px;
 }
 
-.scan-pair {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
 .scan-slot {
   position: relative;
   width: 150px;
@@ -273,15 +268,15 @@ body {
 
 .scan-clear-btn {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 28px;
-  height: 28px;
+  top: -12px;
+  right: -12px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: none;
   background: var(--danger);
   color: white;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
   z-index: 2;
@@ -709,10 +704,15 @@ body {
 .listing-action-btn {
   background: none;
   border: none;
-  padding: 4px;
+  padding: 8px;
   cursor: pointer;
   color: var(--gray-400);
-  font-size: 16px;
+  font-size: 18px;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ===== Swipe Delete ===== */
@@ -1574,6 +1574,73 @@ body {
   background: #1e3a5f;
 }
 
+/* Dark mode: header-badge */
+[data-theme="dark"] .header-badge {
+  background: #1e3a5f;
+  color: #60a5fa;
+}
+
+/* Dark mode: mode-toggle */
+[data-theme="dark"] .mode-toggle {
+  background: #1f2937;
+}
+
+/* Dark mode: detail-field borders */
+[data-theme="dark"] .detail-field {
+  border-bottom-color: #374151;
+}
+
+/* Dark mode: form-section borders */
+[data-theme="dark"] .form-section {
+  border-top-color: #374151;
+}
+
+/* Dark mode: comp-section borders */
+[data-theme="dark"] .comp-section {
+  border-top-color: #374151;
+}
+
+/* Dark mode: listings-toolbar border */
+[data-theme="dark"] .listings-toolbar {
+  border-bottom-color: #374151;
+}
+
+/* Dark mode: binder view */
+[data-theme="dark"] .binder-slot {
+  border-color: rgba(255,255,255,0.15);
+}
+
+/* Dark mode: eBay button */
+[data-theme="dark"] .btn-ebay {
+  background: #2563eb;
+}
+[data-theme="dark"] .btn-ebay:active {
+  background: #1d4ed8;
+}
+
+/* Dark mode: inline price input */
+[data-theme="dark"] .header-value {
+  color: #4ade80;
+}
+
+/* Dark mode: sold prices section */
+[data-theme="dark"] .sold-stat .sold-stat-value {
+  color: #4ade80;
+}
+
+[data-theme="dark"] .sold-item-price {
+  color: #4ade80;
+}
+
+[data-theme="dark"] .sold-item {
+  border-bottom-color: #374151;
+}
+
+/* Dark mode: listing price */
+[data-theme="dark"] .listing-price {
+  color: #4ade80;
+}
+
 /* ===== Skip Navigation ===== */
 .skip-nav {
   position: absolute;
@@ -2112,14 +2179,6 @@ a:focus-visible {
 
 .tab {
   position: relative;
-}
-
-/* ===== Scan Options Row ===== */
-.scan-options-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
 }
 
 /* ===== Batch Scan ===== */

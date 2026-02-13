@@ -82,8 +82,8 @@ export async function refreshDashboard() {
     .sort((a, b) => new Date(b.lastModified || b.dateAdded) - new Date(a.lastModified || a.dateAdded))
     .slice(0, 8);
 
-  // Update tab badge counts
-  updateTabBadges(listings.length, collection.length);
+  // Update tab badge counts (show pending/active count, not total)
+  updateTabBadges(pending.length, collection.length);
 
   // Render
   const content = document.getElementById('dashboard-content');

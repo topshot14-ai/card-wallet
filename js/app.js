@@ -557,7 +557,7 @@ function populateReviewForm(card) {
     $('#field-compLow').value = '';
     $('#field-compAvg').value = '';
     $('#field-compHigh').value = '';
-    $('#comp-results').classList.remove('hidden');
+    $('#comp-results').classList.add('hidden');
   }
 
   // Show/hide listing-specific fields
@@ -678,7 +678,13 @@ function updateCharCount() {
 let recentScansShown = 20;
 
 async function loadRecentScans() {
-  const all = await db.getAllCards();
+  let all;
+  try {
+    all = await db.getAllCards();
+  } catch (err) {
+    console.error('Failed to load recent scans:', err);
+    return;
+  }
   const sorted = all.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
   const recent = sorted.slice(0, recentScansShown);
 
@@ -893,7 +899,8 @@ function showCardDetail(card) {
         cancelBtn.addEventListener('click', () => { overlay.classList.add('hidden'); resolve(); });
         confirmBtn.addEventListener('click', async () => {
           overlay.classList.add('hidden');
-          const soldPrice = parseFloat(document.getElementById('modal-sold-price').value) || card.startPrice || 0;
+          const soldPriceEl = document.getElementById('modal-sold-price');
+          const soldPrice = soldPriceEl ? (parseFloat(soldPriceEl.value) || card.startPrice || 0) : (card.startPrice || 0);
           card.status = 'sold';
           card.soldPrice = soldPrice;
           card.lastModified = new Date().toISOString();
@@ -1044,9 +1051,9 @@ function showCardDetail(card) {
         cancelBtn.addEventListener('click', () => { overlay.classList.add('hidden'); resolve(); });
         saveBtn.addEventListener('click', async () => {
           overlay.classList.add('hidden');
-          card.shippingCarrier = document.getElementById('modal-carrier').value;
-          card.trackingNumber = document.getElementById('modal-tracking').value.trim();
-          card.shippingStatus = document.getElementById('modal-ship-status').value;
+          card.shippingCarrier = (document.getElementById('modal-carrier') || {}).value || '';
+          card.trackingNumber = (document.getElementById('modal-tracking')?.value || '').trim();
+          card.shippingStatus = (document.getElementById('modal-ship-status') || {}).value || 'shipped';
           card.lastModified = new Date().toISOString();
           await db.saveCard(card);
           toast('Shipping info saved', 'success');
@@ -1423,7 +1430,13 @@ async function runGlobalSearch(query) {
     return;
   }
 
-  const all = await db.getAllCards();
+  let all;
+  try {
+    all = await db.getAllCards();
+  } catch (err) {
+    console.error('Search failed:', err);
+    return;
+  }
   const q = query.toLowerCase();
   const matches = all.filter(c => {
     const searchable = [c.player, c.team, c.brand, c.setName, c.year, c.parallel, c.cardNumber, c.ebayTitle, c.notes, c.sport]

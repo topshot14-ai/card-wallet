@@ -290,7 +290,10 @@ function startInlineEdit(priceEl) {
   input.focus();
   input.select();
 
+  let cancelled = false;
+
   const save = async () => {
+    if (cancelled) return;
     const newPrice = parseFloat(input.value) || currentPrice;
     card.startPrice = newPrice;
     card.lastModified = new Date().toISOString();
@@ -302,6 +305,7 @@ function startInlineEdit(priceEl) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
     if (e.key === 'Escape') {
+      cancelled = true;
       priceEl.textContent = '$' + Number(currentPrice).toFixed(2);
     }
   });
@@ -309,7 +313,7 @@ function startInlineEdit(priceEl) {
 
 // ===== eBay CSV Export =====
 
-function exportCSV() {
+async function exportCSV() {
   const cardsToExport = selectedIds.size > 0
     ? listings.filter(c => selectedIds.has(c.id))
     : listings;
@@ -385,13 +389,13 @@ function exportCSV() {
     .join('\n');
 
   // Mark exported cards
-  cardsToExport.forEach(async (card) => {
+  for (const card of cardsToExport) {
     if (card.status === 'pending') {
       card.status = 'exported';
       card.lastModified = new Date().toISOString();
       await db.saveCard(card);
     }
-  });
+  }
 
   // Download
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
