@@ -3,7 +3,7 @@
 import * as db from './db.js';
 import { toast, confirm, $ } from './ui.js';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut } from './auth.js';
-import { pullAllCards, pullSettings } from './sync.js';
+import { pullAllCards, pullSettings, pushSettings } from './sync.js';
 
 export async function initSettings() {
   // Load saved settings
@@ -177,7 +177,10 @@ export async function initSettings() {
   $('#btn-sync-now').addEventListener('click', async () => {
     try {
       toast('Syncing...', 'info');
+      await pushSettings();
+      await pullSettings();
       await pullAllCards();
+      await loadSettings();
       toast('Sync complete', 'success');
       await refreshStats();
       window.dispatchEvent(new CustomEvent('data-imported'));
@@ -192,7 +195,8 @@ export async function initSettings() {
     if (signedIn) {
       showAccountState('signed-in');
       $('#auth-user-email').textContent = user.email || user.displayName || 'Signed In';
-      // Pull settings from cloud (restores API key in private tabs / new devices)
+      // Sync settings: push local to cloud, then pull cloud to local
+      await pushSettings();
       await pullSettings();
       await loadSettings();
       window.dispatchEvent(new CustomEvent('apikey-changed'));
