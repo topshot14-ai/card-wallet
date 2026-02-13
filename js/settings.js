@@ -119,8 +119,9 @@ export async function initSettings() {
     const email = $('#auth-email').value.trim();
     const password = $('#auth-password').value;
     if (!email || !password) { toast('Enter email and password', 'warning'); return; }
+    const rememberMe = $('#auth-remember-me')?.checked !== false;
     try {
-      await signInWithEmail(email, password);
+      await signInWithEmail(email, password, rememberMe);
       toast('Signed in', 'success');
     } catch (err) {
       toast(err.message, 'error', 4000);
@@ -131,8 +132,9 @@ export async function initSettings() {
     const email = $('#auth-email').value.trim();
     const password = $('#auth-password').value;
     if (!email || !password) { toast('Enter email and password', 'warning'); return; }
+    const rememberMe = $('#auth-remember-me')?.checked !== false;
     try {
-      await signUpWithEmail(email, password);
+      await signUpWithEmail(email, password, rememberMe);
       toast('Account created', 'success');
     } catch (err) {
       toast(err.message, 'error', 4000);
@@ -164,12 +166,14 @@ export async function initSettings() {
     }
   });
 
-  // Auth state listener — toggle signed-in/out UI
-  window.addEventListener('auth-state-changed', (e) => {
+  // Auth state listener — toggle signed-in/out UI and reload settings
+  window.addEventListener('auth-state-changed', async (e) => {
     const { user, signedIn } = e.detail;
     if (signedIn) {
       showAccountState('signed-in');
       $('#auth-user-email').textContent = user.email || user.displayName || 'Signed In';
+      // Reload settings to restore API key (may have been cleared from IndexedDB)
+      await loadSettings();
     } else {
       showAccountState('signed-out');
       $('#auth-email').value = '';

@@ -25,11 +25,15 @@ export function initAuth() {
   });
 }
 
-export async function signUpWithEmail(email, password) {
+export async function signUpWithEmail(email, password, rememberMe = true) {
   const auth = getAuth();
   if (!auth) throw new Error('Firebase not configured');
 
   try {
+    const persistence = rememberMe
+      ? firebase.auth.Auth.Persistence.LOCAL
+      : firebase.auth.Auth.Persistence.SESSION;
+    await auth.setPersistence(persistence);
     const result = await auth.createUserWithEmailAndPassword(email, password);
     return result.user;
   } catch (err) {
@@ -37,11 +41,15 @@ export async function signUpWithEmail(email, password) {
   }
 }
 
-export async function signInWithEmail(email, password) {
+export async function signInWithEmail(email, password, rememberMe = true) {
   const auth = getAuth();
   if (!auth) throw new Error('Firebase not configured');
 
   try {
+    const persistence = rememberMe
+      ? firebase.auth.Auth.Persistence.LOCAL
+      : firebase.auth.Auth.Persistence.SESSION;
+    await auth.setPersistence(persistence);
     const result = await auth.signInWithEmailAndPassword(email, password);
     return result.user;
   } catch (err) {

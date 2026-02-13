@@ -290,6 +290,45 @@ body {
   justify-content: center;
 }
 
+/* Batch wizard */
+.batch-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.batch-step-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gray-700);
+  margin-bottom: 12px;
+}
+
+.batch-scan-slot {
+  width: 200px;
+  height: 240px;
+}
+
+.batch-added-check {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--success);
+  color: white;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.batch-added-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
 .identify-btn {
   width: 100%;
   max-width: 312px;
@@ -1448,6 +1487,11 @@ body {
   background: #1f2937;
   border-color: var(--gray-300);
   color: var(--gray-500);
+}
+
+[data-theme="dark"] .batch-step-label,
+[data-theme="dark"] .batch-added-text {
+  color: var(--gray-300);
 }
 
 [data-theme="dark"] .form-group input,
