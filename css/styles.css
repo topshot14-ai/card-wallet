@@ -529,6 +529,11 @@ body {
   background: var(--primary-dark);
 }
 
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .btn-secondary {
   background: var(--gray-100);
   color: var(--gray-700);

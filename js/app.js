@@ -1636,68 +1636,93 @@ function updateBatchIdentifyButton() {
 
 async function handleBatchIdentify() {
   const pending = batchQueue.filter(q => q.status === 'pending');
-  if (pending.length === 0) return;
+  if (pending.length === 0) {
+    toast('No cards ready to identify. Upload photos first.', 'info');
+    return;
+  }
 
-  const defaults = await getDefaults();
-  let processed = 0;
+  // Check API key before starting
+  let apiKey = await db.getSetting('apiKey');
+  if (!apiKey) {
+    try { apiKey = localStorage.getItem('cw_apiKey'); } catch {}
+  }
+  if (!apiKey) {
+    toast('API key required. Add your Claude API key in Settings first.', 'error', 4000);
+    return;
+  }
 
-  for (const item of pending) {
-    if (!item.photo) continue;
+  const btn = document.getElementById('btn-batch-identify');
+  btn.disabled = true;
+  btn.textContent = `Scanning 0/${pending.length}...`;
 
-    item.status = 'identifying';
-    renderBatchQueue();
+  try {
+    const defaults = await getDefaults();
+    let processed = 0;
 
-    try {
-      const aiData = await identifyCard(item.photo.fullBase64, null);
+    for (const item of pending) {
+      if (!item.photo) continue;
 
-      const card = createCard({
-        mode: currentMode,
-        sport: aiData.sport || defaults.sport,
-        year: aiData.year || '',
-        brand: aiData.brand || '',
-        setName: aiData.setName || '',
-        subset: aiData.subset || '',
-        parallel: aiData.parallel || '',
-        cardNumber: aiData.cardNumber || '',
-        player: aiData.player || '',
-        team: aiData.team || '',
-        attributes: aiData.attributes || [],
-        serialNumber: aiData.serialNumber || '',
-        graded: aiData.graded || 'No',
-        gradeCompany: aiData.gradeCompany || '',
-        gradeValue: aiData.gradeValue || '',
-        estimatedValueLow: null,
-        estimatedValueHigh: null,
-        condition: defaults.condition,
-        startPrice: defaults.startPrice,
-        imageBlob: item.photo.imageBlob,
-        imageThumbnail: item.photo.thumbnailBase64
-      });
+      item.status = 'identifying';
+      btn.textContent = `Scanning ${processed + 1}/${pending.length}...`;
+      renderBatchQueue();
 
-      card.ebayTitle = generateEbayTitle(card);
-      await db.saveCard(card);
+      try {
+        const aiData = await identifyCard(item.photo.fullBase64, null);
 
-      // Auto-fetch sold prices in background
-      autoFetchSoldPrices(card);
+        const card = createCard({
+          mode: currentMode,
+          sport: aiData.sport || defaults.sport,
+          year: aiData.year || '',
+          brand: aiData.brand || '',
+          setName: aiData.setName || '',
+          subset: aiData.subset || '',
+          parallel: aiData.parallel || '',
+          cardNumber: aiData.cardNumber || '',
+          player: aiData.player || '',
+          team: aiData.team || '',
+          attributes: aiData.attributes || [],
+          serialNumber: aiData.serialNumber || '',
+          graded: aiData.graded || 'No',
+          gradeCompany: aiData.gradeCompany || '',
+          gradeValue: aiData.gradeValue || '',
+          estimatedValueLow: null,
+          estimatedValueHigh: null,
+          condition: defaults.condition,
+          startPrice: defaults.startPrice,
+          imageBlob: item.photo.imageBlob,
+          imageThumbnail: item.photo.thumbnailBase64
+        });
 
-      item.card = card;
-      item.status = 'done';
-      processed++;
-    } catch (err) {
-      item.status = 'error';
-      item.error = err.message || 'AI identification failed';
+        card.ebayTitle = generateEbayTitle(card);
+        await db.saveCard(card);
+
+        // Auto-fetch sold prices in background
+        autoFetchSoldPrices(card);
+
+        item.card = card;
+        item.status = 'done';
+        processed++;
+      } catch (err) {
+        item.status = 'error';
+        item.error = err.message || 'AI identification failed';
+      }
+
+      renderBatchQueue();
     }
 
-    renderBatchQueue();
-    updateBatchIdentifyButton();
+    if (processed > 0) {
+      toast(`${processed} card${processed > 1 ? 's' : ''} identified and saved`, 'success');
+      await refreshListings();
+      await refreshCollection();
+      await loadRecentScans();
+    } else {
+      toast('All cards failed to identify. Check your API key and try again.', 'error');
+    }
+  } catch (err) {
+    toast('Batch identify failed: ' + (err.message || 'Unknown error'), 'error');
   }
 
-  if (processed > 0) {
-    toast(`${processed} card${processed > 1 ? 's' : ''} identified and saved`, 'success');
-    await refreshListings();
-    await refreshCollection();
-    await loadRecentScans();
-  }
+  updateBatchIdentifyButton();
 }
 
 function escapeHtml(str) {
