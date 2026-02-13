@@ -408,7 +408,7 @@ async function exportCSV() {
   URL.revokeObjectURL(url);
 
   toast(`Exported ${cardsToExport.length} listing(s)`, 'success');
-  refreshListings();
+  await refreshListings();
 }
 
 function buildDescription(card) {
