@@ -43,6 +43,9 @@ export async function initListings() {
     });
   }
 
+  // Swipe to delete (mobile)
+  initSwipeToDelete();
+
   // Event delegation on listings container
   const container = $('#listings-list');
   container.addEventListener('change', (e) => {
@@ -64,6 +67,22 @@ export async function initListings() {
     if (viewBtn) {
       e.stopPropagation();
       window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: viewBtn.dataset.id } }));
+      return;
+    }
+
+    // Quick mark sold button
+    const soldBtn = e.target.closest('.listing-sold-btn');
+    if (soldBtn) {
+      e.stopPropagation();
+      const card = listings.find(c => c.id === soldBtn.dataset.id);
+      if (card) {
+        card.status = 'sold';
+        card.soldPrice = card.startPrice || 0;
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+        toast('Card marked as sold', 'success');
+        await refreshListings();
+      }
       return;
     }
 
@@ -156,6 +175,7 @@ function render() {
       <div class="listing-price" data-id="${card.id}" title="Tap to edit">${card.startPrice ? '$' + Number(card.startPrice).toFixed(2) : ''}</div>
       <div class="listing-actions">
         <button class="listing-action-btn listing-view-btn" data-id="${card.id}" title="View" aria-label="View card">&#128065;</button>
+        ${card.status !== 'sold' ? `<button class="listing-action-btn listing-sold-btn" data-id="${card.id}" title="Mark Sold" aria-label="Mark as sold">&#9989;</button>` : ''}
         <button class="listing-action-btn listing-delete-btn" data-id="${card.id}" title="Delete" aria-label="Delete card">&#128465;</button>
       </div>
     </div>
@@ -396,6 +416,79 @@ function buildDescription(card) {
   if (card.serialNumber) lines.push(`Serial: ${card.serialNumber}`);
   if (card.condition) lines.push(`Condition: ${card.condition}`);
   return lines.join(' | ');
+}
+
+// ===== Swipe to Delete =====
+
+function initSwipeToDelete() {
+  const container = $('#listings-list');
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let activeItem = null;
+  let swiping = false;
+
+  container.addEventListener('touchstart', (e) => {
+    const item = e.target.closest('.listing-item');
+    if (!item) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    activeItem = item;
+    swiping = false;
+  }, { passive: true });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!activeItem) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+
+    // Only swipe horizontally
+    if (!swiping && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+      swiping = true;
+    }
+
+    if (swiping && dx < 0) {
+      const offset = Math.max(dx, -100);
+      activeItem.style.transform = `translateX(${offset}px)`;
+      activeItem.style.transition = 'none';
+
+      // Show delete indicator
+      if (!activeItem.querySelector('.swipe-delete-bg')) {
+        const bg = document.createElement('div');
+        bg.className = 'swipe-delete-bg';
+        bg.innerHTML = '&#128465; Delete';
+        activeItem.style.position = 'relative';
+        activeItem.style.overflow = 'visible';
+        activeItem.appendChild(bg);
+      }
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchend', async (e) => {
+    if (!activeItem) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+
+    if (swiping && dx < -80) {
+      // Swiped far enough — delete
+      const id = activeItem.dataset.id;
+      activeItem.style.transition = 'transform 0.2s, opacity 0.2s';
+      activeItem.style.transform = 'translateX(-100%)';
+      activeItem.style.opacity = '0';
+      setTimeout(async () => {
+        await db.softDeleteCard(id);
+        await refreshListings();
+        toast('Listing moved to trash', 'success');
+      }, 200);
+    } else if (swiping) {
+      // Snap back
+      activeItem.style.transition = 'transform 0.2s';
+      activeItem.style.transform = '';
+      const bg = activeItem.querySelector('.swipe-delete-bg');
+      if (bg) bg.remove();
+    }
+
+    activeItem = null;
+    swiping = false;
+  }, { passive: true });
 }
 
 function escapeHtml(str) {

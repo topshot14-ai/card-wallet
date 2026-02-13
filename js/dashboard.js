@@ -1,4 +1,4 @@
-// Dashboard — P&L, portfolio value, recent activity, best/worst flips
+// Dashboard — P&L, portfolio value, recent activity, best/worst flips, alerts, sport breakdown
 
 import * as db from './db.js';
 import { formatDate, $ } from './ui.js';
@@ -54,16 +54,56 @@ export async function refreshDashboard() {
   const bestFlips = flips.slice(0, 3);
   const worstFlips = flips.length > 0 ? flips.slice(-3).reverse() : [];
 
-  // Recent activity (last 10 cards by lastModified)
+  // Stale listings (pending for 30+ days)
+  const now = Date.now();
+  const staleThreshold = 30 * 24 * 60 * 60 * 1000;
+  const staleListings = pending.filter(c => {
+    const added = new Date(c.dateAdded).getTime();
+    return (now - added) > staleThreshold;
+  });
+
+  // Sport breakdown
+  const sportCounts = {};
+  all.forEach(c => {
+    const sport = c.sport || 'Unknown';
+    sportCounts[sport] = (sportCounts[sport] || 0) + 1;
+  });
+  const sportBreakdown = Object.entries(sportCounts)
+    .sort((a, b) => b[1] - a[1]);
+
+  // Needs attention: cards without purchase price
+  const noPriceCount = all.filter(c => !c.purchasePrice && c.mode === 'listing').length;
+
+  // Shipped but not delivered
+  const shippedCount = sold.filter(c => c.shippingStatus === 'shipped').length;
+
+  // Recent activity (last 8 cards by lastModified)
   const recent = [...all]
     .sort((a, b) => new Date(b.lastModified || b.dateAdded) - new Date(a.lastModified || a.dateAdded))
     .slice(0, 8);
+
+  // Update tab badge counts
+  updateTabBadges(listings.length, collection.length);
 
   // Render
   const content = document.getElementById('dashboard-content');
   if (!content) return;
 
+  // Build alerts HTML
+  const alerts = [];
+  if (staleListings.length > 0) {
+    alerts.push(`<div class="dash-alert dash-alert-warning">&#9888; ${staleListings.length} listing${staleListings.length > 1 ? 's' : ''} pending for 30+ days — consider relisting or lowering the price.</div>`);
+  }
+  if (shippedCount > 0) {
+    alerts.push(`<div class="dash-alert dash-alert-info">&#128230; ${shippedCount} sold card${shippedCount > 1 ? 's' : ''} shipped but not marked delivered.</div>`);
+  }
+  if (noPriceCount > 0 && noPriceCount <= 10) {
+    alerts.push(`<div class="dash-alert dash-alert-info">&#128176; ${noPriceCount} listing${noPriceCount > 1 ? 's' : ''} missing purchase price — add it to track profit.</div>`);
+  }
+
   content.innerHTML = `
+    ${alerts.length > 0 ? `<div class="dash-alerts">${alerts.join('')}</div>` : ''}
+
     <!-- Key Metrics -->
     <div class="dash-metrics">
       <div class="dash-metric">
@@ -108,6 +148,27 @@ export async function refreshDashboard() {
         </div>
       </div>
     </div>
+
+    ${sportBreakdown.length > 1 ? `
+    <!-- Sport Breakdown -->
+    <div class="dash-section">
+      <h3>Collection by Sport</h3>
+      <div class="dash-sport-breakdown">
+        ${sportBreakdown.map(([sport, count]) => {
+          const pct = totalCards > 0 ? Math.round((count / totalCards) * 100) : 0;
+          return `
+            <div class="dash-sport-row">
+              <span class="dash-sport-name">${escapeHtml(sport)}</span>
+              <div class="dash-sport-bar-bg">
+                <div class="dash-sport-bar" style="width:${pct}%"></div>
+              </div>
+              <span class="dash-sport-count">${count}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+    ` : ''}
 
     ${bestFlips.length > 0 ? `
     <!-- Best Flips -->
@@ -161,6 +222,25 @@ export async function refreshDashboard() {
       </div>`}
     </div>
   `;
+}
+
+function updateTabBadges(listingsCount, collectionCount) {
+  // Update tab badges
+  document.querySelectorAll('.tab').forEach(tab => {
+    const existing = tab.querySelector('.tab-badge');
+    if (existing) existing.remove();
+
+    let count = 0;
+    if (tab.dataset.view === 'listings' && listingsCount > 0) count = listingsCount;
+    if (tab.dataset.view === 'collection' && collectionCount > 0) count = collectionCount;
+
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.textContent = count > 99 ? '99+' : count;
+      tab.appendChild(badge);
+    }
+  });
 }
 
 function escapeHtml(str) {

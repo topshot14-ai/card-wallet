@@ -61,6 +61,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#scan-clear-back').addEventListener('click', () => clearStagedPhoto('back'));
   $('#btn-identify').addEventListener('click', handleIdentify);
 
+  // Manual entry button
+  $('#btn-manual-entry').addEventListener('click', handleManualEntry);
+
   // Batch mode toggle
   $('#batch-mode-toggle').addEventListener('change', (e) => {
     batchMode = e.target.checked;
@@ -81,7 +84,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#batch-file-input').addEventListener('change', handleBatchFileUpload);
   $('#btn-batch-identify').addEventListener('click', handleBatchIdentify);
 
-  // Add back photo from review screen
+  // Add front/back photo from review screen
+  $('#review-add-front-input').addEventListener('change', handleReviewAddFront);
   $('#review-add-back-input').addEventListener('change', handleReviewAddBack);
 
   // Review form events
@@ -165,6 +169,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
+
+  // Pull to refresh (mobile gesture)
+  initPullToRefresh();
+
+  // Global search
+  initGlobalSearch();
 
   // Onboarding (first-run)
   await initOnboarding();
@@ -353,6 +363,50 @@ async function handleIdentify() {
   autoFetchSoldPrices(currentCard);
 }
 
+// ===== Manual Card Entry (no AI needed) =====
+
+async function handleManualEntry() {
+  const defaults = await getDefaults();
+
+  currentCard = createCard({
+    mode: currentMode,
+    sport: defaults.sport,
+    condition: defaults.condition,
+    startPrice: defaults.startPrice,
+    estimatedValueLow: null,
+    estimatedValueHigh: null
+  });
+
+  currentCard.ebayTitle = '';
+  populateReviewForm(currentCard);
+  showView('view-review');
+}
+
+async function handleReviewAddFront(e) {
+  const file = e.target.files[0];
+  if (!file || !currentCard) return;
+  e.target.value = '';
+
+  showLoading('Processing photo...');
+  try {
+    const photo = await processPhoto(file);
+    hideLoading();
+
+    currentCard.imageBlob = photo.imageBlob;
+    currentCard.imageThumbnail = photo.thumbnailBase64;
+
+    const frontImg = $('#review-image-front');
+    frontImg.src = photo.imageBlob;
+    frontImg.classList.remove('hidden');
+    $('#review-add-front-label').classList.add('hidden');
+
+    toast('Photo added', 'success');
+  } catch (err) {
+    hideLoading();
+    toast('Failed to process photo: ' + err.message, 'error');
+  }
+}
+
 async function handleReviewAddBack(e) {
   const file = e.target.files[0];
   if (!file || !currentCard) return;
@@ -383,11 +437,14 @@ async function handleReviewAddBack(e) {
 function populateReviewForm(card) {
   // Front image
   const frontImg = $('#review-image-front');
+  const addFrontLabel = $('#review-add-front-label');
   if (card.imageBlob) {
     frontImg.src = card.imageBlob;
     frontImg.classList.remove('hidden');
+    addFrontLabel.classList.add('hidden');
   } else {
     frontImg.classList.add('hidden');
+    addFrontLabel.classList.remove('hidden');
   }
 
   // Back image
@@ -715,13 +772,15 @@ function showCardDetail(card) {
   fields.push(['Added', formatDate(card.dateAdded)]);
   fields.push(['Mode', card.mode === 'listing' ? 'Listing' : 'Collection']);
 
+  const detailImages = [card.imageBlob, card.imageBackBlob].filter(Boolean);
+
   content.innerHTML = `
     <div class="detail-images">
       ${card.imageBlob
-        ? `<img src="${card.imageBlob}" alt="Card front" class="detail-image">`
+        ? `<img src="${card.imageBlob}" alt="Card front" class="detail-image" data-viewer-index="0">`
         : ''}
       ${card.imageBackBlob
-        ? `<img src="${card.imageBackBlob}" alt="Card back" class="detail-image">`
+        ? `<img src="${card.imageBackBlob}" alt="Card back" class="detail-image" data-viewer-index="${card.imageBlob ? 1 : 0}">`
         : ''}
     </div>
     <div class="detail-fields">
@@ -918,6 +977,14 @@ function showCardDetail(card) {
       await loadRecentScans();
       goBack();
     }
+  });
+
+  // Image viewer — tap detail images to zoom
+  content.querySelectorAll('.detail-image').forEach(img => {
+    img.addEventListener('click', () => {
+      const idx = parseInt(img.dataset.viewerIndex) || 0;
+      window.openImageViewer(detailImages, idx);
+    });
   });
 
   showView('view-detail');
@@ -1188,28 +1255,261 @@ async function checkApiKeyGate() {
 
   const gate = $('#api-key-gate');
   const scanArea = document.querySelector('.scan-area');
+  const batchSection = document.getElementById('batch-queue-section');
 
   if (!apiKey) {
     gate.classList.remove('hidden');
+    // Only dim the camera/AI scan area, not the entire view
     if (scanArea) scanArea.style.opacity = '0.4';
     if (scanArea) scanArea.style.pointerEvents = 'none';
+    if (batchSection) batchSection.style.opacity = '0.4';
+    if (batchSection) batchSection.style.pointerEvents = 'none';
   } else {
     gate.classList.add('hidden');
     if (scanArea) scanArea.style.opacity = '';
     if (scanArea) scanArea.style.pointerEvents = '';
+    if (batchSection) batchSection.style.opacity = '';
+    if (batchSection) batchSection.style.pointerEvents = '';
   }
 
-  $('#gate-go-settings').addEventListener('click', () => {
-    showView('view-settings');
-    setTimeout(() => {
-      const input = $('#setting-api-key');
-      if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth' }); }
-    }, 300);
-  });
+  // Only bind once
+  const gateBtn = $('#gate-go-settings');
+  if (!gateBtn.dataset.bound) {
+    gateBtn.dataset.bound = 'true';
+    gateBtn.addEventListener('click', () => {
+      showView('view-settings');
+      setTimeout(() => {
+        const input = $('#setting-api-key');
+        if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth' }); }
+      }, 300);
+    });
+  }
 }
 
 // Re-check gate when returning to scan view
 window.addEventListener('apikey-changed', () => checkApiKeyGate());
+
+// ===== Global Search =====
+
+function initGlobalSearch() {
+  const btn = $('#btn-global-search');
+  const overlay = document.getElementById('global-search-overlay');
+  const input = document.getElementById('global-search-input');
+  const results = document.getElementById('global-search-results');
+  const closeBtn = document.getElementById('global-search-close');
+
+  btn.addEventListener('click', () => {
+    overlay.classList.remove('hidden');
+    input.value = '';
+    results.innerHTML = '<p class="empty-state" style="padding:32px 0">Search by player, team, set, year, or brand</p>';
+    setTimeout(() => input.focus(), 100);
+  });
+
+  closeBtn.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+  });
+
+  let debounceTimer;
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => runGlobalSearch(input.value.trim()), 200);
+  });
+
+  results.addEventListener('click', (e) => {
+    const item = e.target.closest('.global-search-item');
+    if (item) {
+      overlay.classList.add('hidden');
+      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: item.dataset.id } }));
+    }
+  });
+}
+
+async function runGlobalSearch(query) {
+  const results = document.getElementById('global-search-results');
+
+  if (!query || query.length < 2) {
+    results.innerHTML = '<p class="empty-state" style="padding:32px 0">Search by player, team, set, year, or brand</p>';
+    return;
+  }
+
+  const all = await db.getAllCards();
+  const q = query.toLowerCase();
+  const matches = all.filter(c => {
+    const searchable = [c.player, c.team, c.brand, c.setName, c.year, c.parallel, c.cardNumber, c.ebayTitle, c.notes, c.sport]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return searchable.includes(q);
+  }).slice(0, 30);
+
+  if (matches.length === 0) {
+    results.innerHTML = `<p class="empty-state" style="padding:32px 0">No cards match "${escapeHtml(query)}"</p>`;
+    return;
+  }
+
+  results.innerHTML = matches.map(card => `
+    <div class="global-search-item" data-id="${card.id}">
+      ${card.imageThumbnail
+        ? `<img src="${card.imageThumbnail}" alt="Card">`
+        : '<div style="width:48px;height:48px;background:var(--gray-100);border-radius:4px;flex-shrink:0"></div>'}
+      <div class="global-search-item-info">
+        <div class="name">${escapeHtml(cardDisplayName(card))}</div>
+        <div class="detail">${escapeHtml(cardDetailLine(card))}</div>
+      </div>
+      <span class="global-search-mode ${card.mode}">${card.mode === 'listing' ? 'List' : 'Collect'}</span>
+    </div>
+  `).join('');
+}
+
+// ===== Pull to Refresh =====
+
+function initPullToRefresh() {
+  const views = [
+    { id: 'view-scan', refresh: () => loadRecentScans() },
+    { id: 'view-dashboard', refresh: () => refreshDashboard() },
+    { id: 'view-listings', refresh: () => refreshListings() },
+    { id: 'view-collection', refresh: () => refreshCollection() }
+  ];
+
+  views.forEach(({ id, refresh }) => {
+    const view = document.getElementById(id);
+    if (!view) return;
+    const scrollable = view.querySelector('.view-content');
+    if (!scrollable) return;
+
+    let startY = 0;
+    let pulling = false;
+    let indicator = null;
+
+    scrollable.addEventListener('touchstart', (e) => {
+      if (scrollable.scrollTop === 0) {
+        startY = e.touches[0].clientY;
+        pulling = true;
+      }
+    }, { passive: true });
+
+    scrollable.addEventListener('touchmove', (e) => {
+      if (!pulling) return;
+      const dy = e.touches[0].clientY - startY;
+      if (dy > 30 && scrollable.scrollTop === 0) {
+        if (!indicator) {
+          indicator = document.createElement('div');
+          indicator.className = 'pull-refresh-indicator';
+          indicator.textContent = 'Release to refresh';
+          scrollable.prepend(indicator);
+        }
+        const progress = Math.min(dy / 100, 1);
+        indicator.style.opacity = progress;
+        indicator.style.height = Math.min(dy * 0.4, 40) + 'px';
+      }
+    }, { passive: true });
+
+    scrollable.addEventListener('touchend', async () => {
+      if (indicator) {
+        indicator.textContent = 'Refreshing...';
+        try { await refresh(); } catch {}
+        indicator.remove();
+        indicator = null;
+      }
+      pulling = false;
+    }, { passive: true });
+  });
+}
+
+// ===== Full-Screen Image Viewer =====
+
+const imageViewer = {
+  images: [],
+  currentIndex: 0,
+
+  open(images, startIndex = 0) {
+    this.images = images.filter(Boolean);
+    this.currentIndex = startIndex;
+    if (this.images.length === 0) return;
+
+    const overlay = document.getElementById('image-viewer');
+    overlay.classList.remove('hidden');
+    this.render();
+    document.body.style.overflow = 'hidden';
+  },
+
+  close() {
+    document.getElementById('image-viewer').classList.add('hidden');
+    document.body.style.overflow = '';
+    this.images = [];
+  },
+
+  prev() {
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      this.render();
+    }
+  },
+
+  next() {
+    if (this.currentIndex < this.images.length - 1) {
+      this.currentIndex++;
+      this.render();
+    }
+  },
+
+  render() {
+    const img = document.getElementById('image-viewer-img');
+    const counter = document.getElementById('image-viewer-counter');
+    const prevBtn = document.getElementById('image-viewer-prev');
+    const nextBtn = document.getElementById('image-viewer-next');
+
+    img.src = this.images[this.currentIndex];
+    counter.textContent = this.images.length > 1
+      ? `${this.currentIndex + 1} / ${this.images.length}`
+      : '';
+    prevBtn.disabled = this.currentIndex === 0;
+    nextBtn.disabled = this.currentIndex >= this.images.length - 1;
+
+    // Hide nav if only one image
+    const nav = document.querySelector('.image-viewer-nav');
+    nav.style.display = this.images.length > 1 ? 'flex' : 'none';
+  }
+};
+
+// Wire up image viewer controls
+document.getElementById('image-viewer-close').addEventListener('click', () => imageViewer.close());
+document.getElementById('image-viewer-prev').addEventListener('click', () => imageViewer.prev());
+document.getElementById('image-viewer-next').addEventListener('click', () => imageViewer.next());
+document.getElementById('image-viewer').addEventListener('click', (e) => {
+  if (e.target.id === 'image-viewer' || e.target.id === 'image-viewer-body') {
+    imageViewer.close();
+  }
+});
+
+// Keyboard support
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('image-viewer').classList.contains('hidden')) return;
+  if (e.key === 'Escape') imageViewer.close();
+  if (e.key === 'ArrowLeft') imageViewer.prev();
+  if (e.key === 'ArrowRight') imageViewer.next();
+});
+
+// Swipe support for image viewer
+(function() {
+  let touchStartX = 0;
+  const viewer = document.getElementById('image-viewer');
+
+  viewer.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+
+  viewer.addEventListener('touchend', (e) => {
+    const diff = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(diff) > 60) {
+      if (diff > 0) imageViewer.prev();
+      else imageViewer.next();
+    }
+  }, { passive: true });
+})();
+
+// Expose globally so detail view can use it
+window.openImageViewer = (images, startIndex) => imageViewer.open(images, startIndex);
 
 // ===== Batch Scanning =====
 

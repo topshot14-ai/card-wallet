@@ -39,6 +39,28 @@
     </div>
   </div>
 
+  <!-- Global Search Overlay -->
+  <div id="global-search-overlay" class="global-search-overlay hidden">
+    <div class="global-search-header">
+      <input type="search" id="global-search-input" placeholder="Search all cards..." class="global-search-input" autocomplete="off">
+      <button id="global-search-close" class="btn btn-secondary btn-sm">Cancel</button>
+    </div>
+    <div id="global-search-results" class="global-search-results"></div>
+  </div>
+
+  <!-- Full-Screen Image Viewer -->
+  <div id="image-viewer" class="image-viewer hidden">
+    <button class="image-viewer-close" id="image-viewer-close" aria-label="Close">&times;</button>
+    <div class="image-viewer-counter" id="image-viewer-counter"></div>
+    <div class="image-viewer-body" id="image-viewer-body">
+      <img id="image-viewer-img" src="" alt="Card image" draggable="false">
+    </div>
+    <div class="image-viewer-nav">
+      <button class="image-viewer-prev" id="image-viewer-prev" aria-label="Previous image">&#8592;</button>
+      <button class="image-viewer-next" id="image-viewer-next" aria-label="Next image">&#8594;</button>
+    </div>
+  </div>
+
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="loading-overlay hidden">
     <div class="loading-spinner"></div>
@@ -61,13 +83,14 @@
   <div id="view-scan" class="view active" role="main" aria-label="Scan card">
     <header class="view-header">
       <h1>Scan Card</h1>
+      <button id="btn-global-search" class="header-btn" aria-label="Search all cards">&#128269;</button>
     </header>
     <div class="view-content scan-content">
       <!-- API Key Gate Banner -->
       <div id="api-key-gate" class="api-key-gate hidden">
         <div class="gate-icon">&#128273;</div>
-        <p><strong>API key required</strong></p>
-        <p>Add your Claude API key to start scanning cards.</p>
+        <p><strong>API key needed for AI scanning</strong></p>
+        <p>Add your Claude API key to auto-identify cards. You can still use <strong>Manual Entry</strong> without it.</p>
         <button id="gate-go-settings" class="btn btn-primary btn-sm">Go to Settings</button>
       </div>
 
@@ -77,10 +100,11 @@
         <button id="mode-collection" class="mode-btn" data-mode="collection">Collect It</button>
       </div>
 
-      <!-- Batch Scan Toggle -->
-      <div class="batch-scan-toggle">
+      <!-- Scan Options Row -->
+      <div class="scan-options-row">
+        <button id="btn-manual-entry" class="btn btn-secondary btn-sm">+ Manual Entry</button>
         <label class="toggle-row" style="font-size:13px">
-          <span>Batch Mode</span>
+          <span>Batch</span>
           <input type="checkbox" id="batch-mode-toggle" class="toggle-input">
           <span class="toggle-switch"></span>
         </label>
@@ -154,6 +178,8 @@
         <div class="review-image-container">
           <span class="image-label">Front</span>
           <img id="review-image-front" src="" alt="Card front">
+          <label class="add-back-btn hidden" id="review-add-front-label" for="review-add-front-input">+ Add Photo</label>
+          <input type="file" id="review-add-front-input" accept="image/*" capture="environment" class="hidden">
         </div>
         <div class="review-image-container">
           <span class="image-label">Back</span>
@@ -371,6 +397,7 @@
   <!-- ===== COLLECTION VIEW ===== -->
   <div id="view-collection" class="view" role="main" aria-label="Collection">
     <header class="view-header">
+      <span id="collection-value" class="header-value"></span>
       <h1>Collection</h1>
       <span id="collection-count" class="header-badge">0</span>
     </header>
@@ -586,7 +613,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v3.2</p>
+      <p class="app-version">Card Wallet v3.3</p>
     </div>
   </div>
 

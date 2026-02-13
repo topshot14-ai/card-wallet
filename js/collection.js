@@ -9,11 +9,17 @@ let filteredCards = [];
 let currentFilter = 'all';
 let currentSort = 'dateAdded-desc';
 let searchQuery = '';
-let currentViewMode = 'grid';
+let currentViewMode = localStorage.getItem('cw_collectionView') || 'grid';
 let binderPage = 0;
 const COLLECTION_PAGE_SIZE = 50;
 const BINDER_SLOTS = 9; // 3x3 grid per page
 let collectionShown = COLLECTION_PAGE_SIZE;
+
+// Restore saved sort preference
+try {
+  const savedSort = localStorage.getItem('cw_collectionSort');
+  if (savedSort) currentSort = savedSort;
+} catch {}
 
 export async function initCollection() {
   // Search
@@ -35,8 +41,13 @@ export async function initCollection() {
   // Sort
   $('#collection-sort').addEventListener('change', (e) => {
     currentSort = e.target.value;
+    try { localStorage.setItem('cw_collectionSort', currentSort); } catch {}
     applyFilters();
   });
+
+  // Restore saved sort in dropdown
+  const sortEl = $('#collection-sort');
+  if (sortEl) sortEl.value = currentSort;
 
   // View mode toggle
   $$('.view-mode-btn').forEach(btn => {
@@ -44,10 +55,16 @@ export async function initCollection() {
       $$('.view-mode-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentViewMode = btn.dataset.mode;
+      try { localStorage.setItem('cw_collectionView', currentViewMode); } catch {}
       binderPage = 0;
       collectionShown = COLLECTION_PAGE_SIZE;
       render();
     });
+  });
+
+  // Restore saved view mode button state
+  $$('.view-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === currentViewMode);
   });
 
   // Event delegation on grid/list/binder
@@ -86,6 +103,14 @@ export async function initCollection() {
 export async function refreshCollection() {
   allCards = await db.getCardsByMode('collection');
   $('#collection-count').textContent = allCards.length;
+
+  // Calculate and show collection value
+  const totalValue = allCards.reduce((sum, c) => sum + getCardValue(c), 0);
+  const valueEl = $('#collection-value');
+  if (valueEl) {
+    valueEl.textContent = totalValue > 0 ? `$${totalValue.toFixed(0)}` : '';
+  }
+
   collectionShown = COLLECTION_PAGE_SIZE;
   binderPage = 0;
   applyFilters();
