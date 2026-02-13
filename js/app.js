@@ -1765,7 +1765,9 @@ async function handleIdentifyAll() {
           condition: defaults.condition,
           startPrice: defaults.startPrice,
           imageBlob: item.photo.imageBlob,
-          imageThumbnail: item.photo.thumbnailBase64
+          imageThumbnail: item.photo.thumbnailBase64,
+          imageBackBlob: item.backPhoto ? item.backPhoto.imageBlob : null,
+          imageBackThumb: item.backPhoto ? item.backPhoto.thumbnailBase64 : null
         });
 
         card.ebayTitle = generateEbayTitle(card);

@@ -3,6 +3,7 @@
 import * as db from './db.js';
 import { toast, showLoading, hideLoading, $ } from './ui.js';
 import { isEbayConnected } from './ebay-auth.js';
+import { processPhoto } from './camera.js';
 import {
   uploadImage,
   getBusinessPolicies,
@@ -31,6 +32,12 @@ export async function listCardOnEbay(card) {
   if (!connected) {
     toast('Connect to eBay in Settings first', 'warning');
     return;
+  }
+
+  // If no images, prompt user to add photos first
+  if (!card.imageBlob) {
+    const added = await promptForPhotos(card);
+    if (!added) return; // User cancelled
   }
 
   // Show format picker modal
@@ -93,6 +100,96 @@ function showFormatPicker(defaultPrice) {
 }
 
 /**
+ * Prompt user to add front (and optionally back) photos before listing.
+ * Returns true if photos were added, false if cancelled.
+ */
+function promptForPhotos(card) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('modal-overlay');
+    const modal = overlay.querySelector('.modal');
+
+    modal.innerHTML = `
+      <h3>Add Photos</h3>
+      <p style="font-size:14px;color:var(--gray-400);margin-bottom:16px">This card needs photos before listing on eBay.</p>
+      <div class="photo-prompt-slots" style="display:flex;gap:12px;margin-bottom:16px">
+        <div style="flex:1;text-align:center">
+          <label style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;padding:16px;border:2px dashed var(--gray-500);border-radius:8px" id="photo-prompt-front-label">
+            <img id="photo-prompt-front-preview" src="" style="display:none;max-height:120px;border-radius:4px">
+            <span id="photo-prompt-front-text">&#128247; Front</span>
+            <input type="file" accept="image/*" capture="environment" id="photo-prompt-front" style="display:none">
+          </label>
+        </div>
+        <div style="flex:1;text-align:center">
+          <label style="display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;padding:16px;border:2px dashed var(--gray-500);border-radius:8px" id="photo-prompt-back-label">
+            <img id="photo-prompt-back-preview" src="" style="display:none;max-height:120px;border-radius:4px">
+            <span id="photo-prompt-back-text">&#128247; Back (optional)</span>
+            <input type="file" accept="image/*" capture="environment" id="photo-prompt-back" style="display:none">
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="photo-prompt-cancel">Cancel</button>
+        <button class="btn btn-primary" id="photo-prompt-done" disabled>Continue</button>
+      </div>
+    `;
+
+    overlay.classList.remove('hidden');
+
+    let frontPhoto = null;
+    let backPhoto = null;
+
+    document.getElementById('photo-prompt-front').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        frontPhoto = await processPhoto(file);
+        const preview = document.getElementById('photo-prompt-front-preview');
+        preview.src = frontPhoto.thumbnailBase64;
+        preview.style.display = 'block';
+        document.getElementById('photo-prompt-front-text').textContent = 'Front added';
+        document.getElementById('photo-prompt-done').disabled = false;
+      } catch {
+        toast('Failed to process photo', 'error');
+      }
+    });
+
+    document.getElementById('photo-prompt-back').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        backPhoto = await processPhoto(file);
+        const preview = document.getElementById('photo-prompt-back-preview');
+        preview.src = backPhoto.thumbnailBase64;
+        preview.style.display = 'block';
+        document.getElementById('photo-prompt-back-text').textContent = 'Back added';
+      } catch {
+        toast('Failed to process photo', 'error');
+      }
+    });
+
+    document.getElementById('photo-prompt-cancel').addEventListener('click', () => {
+      overlay.classList.add('hidden');
+      resolve(false);
+    });
+
+    document.getElementById('photo-prompt-done').addEventListener('click', async () => {
+      overlay.classList.add('hidden');
+      if (frontPhoto) {
+        card.imageBlob = frontPhoto.imageBlob;
+        card.imageThumbnail = frontPhoto.thumbnailBase64;
+      }
+      if (backPhoto) {
+        card.imageBackBlob = backPhoto.imageBlob;
+        card.imageBackThumb = backPhoto.thumbnailBase64;
+      }
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+      resolve(true);
+    });
+  });
+}
+
+/**
  * Execute the full listing flow for a single card.
  */
 async function executeListingFlow(card, format, price) {
@@ -113,8 +210,7 @@ async function executeListingFlow(card, format, price) {
 
     if (imageUrls.length === 0) {
       hideLoading();
-      toast('No images to upload. Add a photo first.', 'error');
-      return;
+      throw new Error('No images to upload. Add a photo first.');
     }
 
     // Step 2: Fetch business policies
