@@ -44,7 +44,11 @@ export async function listCardOnEbay(card) {
   const result = await showFormatPicker(card.startPrice || 0.99);
   if (!result) return; // User cancelled
 
-  await executeListingFlow(card, result.format, result.price);
+  try {
+    await executeListingFlow(card, result.format, result.price);
+  } catch (err) {
+    toast('eBay listing failed: ' + err.message, 'error', 5000);
+  }
 }
 
 /**
@@ -191,75 +195,66 @@ function promptForPhotos(card) {
 
 /**
  * Execute the full listing flow for a single card.
+ * Throws on failure so callers can track success/failure.
  */
 async function executeListingFlow(card, format, price) {
   const sku = card.id;
 
-  showLoading('Uploading images...');
-  try {
-    // Step 1: Upload images
-    const imageUrls = [];
-    if (card.imageBlob) {
-      const frontUrl = await uploadImage(card.imageBlob);
-      if (frontUrl) imageUrls.push(frontUrl);
-    }
-    if (card.imageBackBlob) {
-      const backUrl = await uploadImage(card.imageBackBlob);
-      if (backUrl) imageUrls.push(backUrl);
-    }
-
-    if (imageUrls.length === 0) {
-      hideLoading();
-      throw new Error('No images to upload. Add a photo first.');
-    }
-
-    // Step 2: Fetch business policies
-    showLoading('Checking business policies...');
-    const policies = await getBusinessPolicies();
-
-    // Step 3: Create inventory item
-    showLoading('Creating inventory item...');
-    await createInventoryItem(sku, card, imageUrls);
-
-    // Step 4: Create offer
-    showLoading('Creating offer...');
-    let offerId;
-    try {
-      offerId = await createOffer(sku, card, format, price, policies);
-    } catch (err) {
-      // Clean up inventory item on offer failure
-      await deleteInventoryItem(sku);
-      throw err;
-    }
-
-    // Step 5: Publish offer
-    showLoading('Publishing listing...');
-    let listingId;
-    try {
-      listingId = await publishOffer(offerId);
-    } catch (err) {
-      // Leave as draft on eBay, inform user
-      hideLoading();
-      toast('Listing saved as draft on eBay. Check Seller Hub to publish.', 'warning', 5000);
-      return;
-    }
-
-    // Step 6: Update card with listing info
-    card.status = 'listed';
-    card.ebayListingId = listingId;
-    card.ebayListingUrl = `https://www.ebay.com/itm/${listingId}`;
-    card.lastModified = new Date().toISOString();
-    await db.saveCard(card);
-
-    hideLoading();
-
-    const toastMsg = `Listed on eBay! Item #${listingId}`;
-    toast(toastMsg, 'success', 5000);
-
-  } catch (err) {
-    hideLoading();
-    toast('eBay listing failed: ' + err.message, 'error', 5000);
+  // Check for images — prompt if missing
+  if (!card.imageBlob && !card.imageBackBlob) {
+    const added = await promptForPhotos(card);
+    if (!added) throw new Error('No photos added');
   }
+
+  showLoading('Uploading images...');
+
+  // Step 1: Upload images
+  const imageUrls = [];
+  if (card.imageBlob) {
+    const frontUrl = await uploadImage(card.imageBlob);
+    if (frontUrl) imageUrls.push(frontUrl);
+  }
+  if (card.imageBackBlob) {
+    const backUrl = await uploadImage(card.imageBackBlob);
+    if (backUrl) imageUrls.push(backUrl);
+  }
+
+  if (imageUrls.length === 0) {
+    hideLoading();
+    throw new Error('Image upload failed. Check your eBay connection in Settings.');
+  }
+
+  // Step 2: Fetch business policies
+  showLoading('Checking business policies...');
+  const policies = await getBusinessPolicies();
+
+  // Step 3: Create inventory item
+  showLoading('Creating inventory item...');
+  await createInventoryItem(sku, card, imageUrls);
+
+  // Step 4: Create offer
+  showLoading('Creating offer...');
+  let offerId;
+  try {
+    offerId = await createOffer(sku, card, format, price, policies);
+  } catch (err) {
+    await deleteInventoryItem(sku);
+    throw err;
+  }
+
+  // Step 5: Publish offer
+  showLoading('Publishing listing...');
+  const listingId = await publishOffer(offerId);
+
+  // Step 6: Update card with listing info
+  card.status = 'listed';
+  card.ebayListingId = listingId;
+  card.ebayListingUrl = `https://www.ebay.com/itm/${listingId}`;
+  card.lastModified = new Date().toISOString();
+  await db.saveCard(card);
+
+  hideLoading();
+  toast(`Listed on eBay! Item #${listingId}`, 'success', 5000);
 }
 
 /**
@@ -300,16 +295,18 @@ async function handleBatchListing() {
     try {
       await executeListingFlow(card, result.format, card.startPrice || result.price);
       successCount++;
-    } catch {
+    } catch (err) {
+      hideLoading();
+      toast(`Card ${i + 1} failed: ${err.message}`, 'error', 3000);
       failCount++;
     }
   }
 
   hideLoading();
 
-  if (failCount > 0) {
+  if (failCount > 0 && successCount > 0) {
     toast(`Listed ${successCount} of ${selectedIds.length} cards. ${failCount} failed.`, 'warning');
-  } else {
+  } else if (successCount > 0) {
     toast(`All ${successCount} cards listed on eBay!`, 'success');
   }
 
