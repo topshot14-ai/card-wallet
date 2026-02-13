@@ -61,12 +61,15 @@ export async function uploadImage(base64DataUri) {
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error || 'Image upload failed');
+    throw new Error(err.error || `Image upload failed (${resp.status})`);
   }
 
   const data = await resp.json();
-  // eBay returns imageUrl in the response
-  return data.imageUrl || data.image_url || data.ImageUrl;
+  const url = data.imageUrl || data.image_url || data.ImageUrl;
+  if (!url) {
+    throw new Error('eBay did not return an image URL');
+  }
+  return url;
 }
 
 /**
