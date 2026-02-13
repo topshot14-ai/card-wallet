@@ -122,7 +122,7 @@ export async function refreshDashboard() {
         <div class="dash-metric-value ${netProfit >= 0 ? 'profit-positive' : 'profit-negative'}">
           ${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}
         </div>
-        <div class="dash-metric-label">Net Profit</div>
+        <div class="dash-metric-label">Realized Profit</div>
       </div>
     </div>
 
@@ -143,7 +143,7 @@ export async function refreshDashboard() {
           <span>$${pendingValue.toFixed(2)}</span>
         </div>
         <div class="dash-pl-row dash-pl-total ${netProfit >= 0 ? 'profit-positive' : 'profit-negative'}">
-          <span>Net Profit</span>
+          <span>Realized Profit</span>
           <span>${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}</span>
         </div>
       </div>

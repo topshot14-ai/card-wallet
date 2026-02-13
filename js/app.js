@@ -599,7 +599,8 @@ function readFormIntoCard() {
   currentCard.condition = $('#field-condition').value;
   currentCard.ebayTitle = $('#field-ebayTitle').value.trim();
   currentCard.startPrice = parseFloat($('#field-startPrice').value) || 0.99;
-  currentCard.purchasePrice = parseFloat($('#field-purchasePrice').value) || null;
+  const purchaseVal = parseFloat($('#field-purchasePrice').value);
+  currentCard.purchasePrice = isNaN(purchaseVal) ? null : purchaseVal;
   currentCard.notes = $('#field-notes').value.trim();
 
   // Comp data
@@ -607,14 +608,15 @@ function readFormIntoCard() {
   const compAvg = parseFloat($('#field-compAvg').value);
   const compHigh = parseFloat($('#field-compHigh').value);
   if (!isNaN(compLow) || !isNaN(compAvg) || !isNaN(compHigh)) {
-    const hadComps = currentCard.compData && (currentCard.compData.low || currentCard.compData.avg || currentCard.compData.high);
+    const oldLow = currentCard.compData?.low;
+    const hadComps = currentCard.compData && (oldLow || currentCard.compData.avg || currentCard.compData.high);
     currentCard.compData = {
       low: isNaN(compLow) ? null : compLow,
       avg: isNaN(compAvg) ? null : compAvg,
       high: isNaN(compHigh) ? null : compHigh
     };
     // Set timestamp if comps are new or changed
-    if (!hadComps || compLow !== currentCard.compData?.low) {
+    if (!hadComps || compLow !== oldLow) {
       currentCard.compLookedUpAt = currentCard.compLookedUpAt || new Date().toISOString();
     }
   }
@@ -1051,9 +1053,9 @@ function showCardDetail(card) {
         cancelBtn.addEventListener('click', () => { overlay.classList.add('hidden'); resolve(); });
         saveBtn.addEventListener('click', async () => {
           overlay.classList.add('hidden');
-          card.shippingCarrier = (document.getElementById('modal-carrier') || {}).value || '';
+          card.shippingCarrier = document.getElementById('modal-carrier')?.value || '';
           card.trackingNumber = (document.getElementById('modal-tracking')?.value || '').trim();
-          card.shippingStatus = (document.getElementById('modal-ship-status') || {}).value || 'shipped';
+          card.shippingStatus = document.getElementById('modal-ship-status')?.value || 'shipped';
           card.lastModified = new Date().toISOString();
           await db.saveCard(card);
           toast('Shipping info saved', 'success');
@@ -1098,6 +1100,9 @@ function editDetailCard() {
     currentCard = card;
     populateReviewForm(card);
     showView('view-review');
+  }).catch(err => {
+    console.error('Failed to load card for edit:', err);
+    toast('Failed to load card', 'error');
   });
 }
 

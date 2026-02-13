@@ -13,17 +13,22 @@ export async function initSettings() {
   const apiKeyInput = $('#setting-api-key');
   const toggleBtn = $('#btn-toggle-api-key');
 
+  let apiKeySaving = false;
   const saveApiKey = async () => {
-    const key = apiKeyInput.value.trim();
-    await db.setSetting('apiKey', key);
-    // Backup to localStorage (more persistent than IndexedDB in some browsers)
-    try { localStorage.setItem('cw_apiKey', key); } catch {}
-    toast('API key saved', 'success');
-    window.dispatchEvent(new CustomEvent('apikey-changed'));
+    if (apiKeySaving) return;
+    apiKeySaving = true;
+    try {
+      const key = apiKeyInput.value.trim();
+      await db.setSetting('apiKey', key);
+      try { localStorage.setItem('cw_apiKey', key); } catch {}
+      toast('API key saved', 'success');
+      window.dispatchEvent(new CustomEvent('apikey-changed'));
+    } finally {
+      apiKeySaving = false;
+    }
   };
 
-  // Save on blur (when user taps away) and on change
-  apiKeyInput.addEventListener('change', saveApiKey);
+  // Save on blur (when user taps away)
   apiKeyInput.addEventListener('blur', saveApiKey);
 
   // Also save after user stops typing for 1.5 seconds

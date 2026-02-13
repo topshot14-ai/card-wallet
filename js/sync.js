@@ -191,9 +191,9 @@ export async function pullSettings() {
     const remote = doc.data();
     for (const key of SYNCED_SETTING_KEYS) {
       if (remote[key] !== undefined && remote[key] !== null) {
-        // Only overwrite if local is empty
+        // Only overwrite if local has no value set
         const local = await getSetting(key);
-        if (!local) {
+        if (local === null || local === undefined) {
           await setSetting(key, remote[key]);
           // Also backup API key to localStorage
           if (key === 'apiKey') {

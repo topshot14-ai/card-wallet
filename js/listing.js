@@ -307,6 +307,7 @@ function startInlineEdit(priceEl) {
     if (e.key === 'Escape') {
       cancelled = true;
       priceEl.textContent = '$' + Number(currentPrice).toFixed(2);
+      input.blur();
     }
   });
 }

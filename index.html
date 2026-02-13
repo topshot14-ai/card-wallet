@@ -222,7 +222,7 @@
           </div>
           <div class="form-group">
             <label for="field-year">Year</label>
-            <input type="text" id="field-year" placeholder="2023">
+            <input type="text" id="field-year" placeholder="2023" inputmode="numeric">
           </div>
         </div>
 
@@ -249,7 +249,7 @@
         <div class="form-row">
           <div class="form-group">
             <label for="field-cardNumber">Card #</label>
-            <input type="text" id="field-cardNumber" placeholder="123">
+            <input type="text" id="field-cardNumber" placeholder="123" inputmode="numeric">
           </div>
           <div class="form-group">
             <label for="field-serialNumber">Serial #</label>
@@ -322,8 +322,8 @@
         <div id="listing-fields" class="form-section">
           <h3>Listing Details</h3>
           <div class="form-group">
-            <label for="field-ebayTitle">eBay Title <span id="title-char-count" class="char-count">(0/80)</span></label>
-            <input type="text" id="field-ebayTitle" maxlength="80" placeholder="Auto-generated title">
+            <label for="field-ebayTitle">eBay Title <span id="title-char-count" class="char-count" aria-live="polite">(0/80)</span></label>
+            <input type="text" id="field-ebayTitle" maxlength="80" placeholder="Auto-generated title" aria-describedby="title-char-count">
           </div>
           <div class="form-group">
             <label for="field-startPrice">Start Price ($)</label>
@@ -416,7 +416,7 @@
     </header>
     <div class="view-content">
       <div class="collection-toolbar">
-        <input type="search" id="collection-search" placeholder="Search cards..." class="search-input">
+        <input type="search" id="collection-search" placeholder="Search cards..." class="search-input" aria-label="Search collection">
         <div class="filter-pills" id="filter-pills">
           <button class="pill active" data-filter="all">All</button>
           <button class="pill" data-filter="Baseball">Baseball</button>
@@ -634,7 +634,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v4.1</p>
+      <p class="app-version">Card Wallet v4.2</p>
     </div>
   </div>
 

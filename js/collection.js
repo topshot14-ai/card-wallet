@@ -126,6 +126,7 @@ function getCardValue(card) {
 }
 
 function applyFilters() {
+  binderPage = 0;
   filteredCards = [...allCards];
 
   // Filter by sport
