@@ -202,6 +202,7 @@ async function executeListingFlow(card, format, price) {
 
   // Check for images — prompt if missing
   if (!card.imageBlob && !card.imageBackBlob) {
+    hideLoading();
     const added = await promptForPhotos(card);
     if (!added) throw new Error('No photos added');
   }
