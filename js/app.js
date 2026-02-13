@@ -955,9 +955,12 @@ function initDarkMode() {
   const toggle = $('#setting-dark-mode');
   if (!toggle) return;
 
-  // Apply saved preference immediately
+  // Apply saved preference (dark mode on by default)
   db.getSetting('darkMode').then(isDark => {
-    if (isDark) {
+    if (isDark === false) {
+      document.documentElement.removeAttribute('data-theme');
+      toggle.checked = false;
+    } else {
       document.documentElement.setAttribute('data-theme', 'dark');
       toggle.checked = true;
     }
