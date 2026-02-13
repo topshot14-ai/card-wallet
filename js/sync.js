@@ -339,7 +339,9 @@ export async function pushSettings() {
     }
     toSync.lastModified = new Date().toISOString();
 
+    console.log('[Sync] pushSettings — keys being pushed:', Object.keys(toSync).filter(k => k !== 'lastModified'));
     await firestore.collection('users').doc(user.uid).collection('settings').doc('prefs').set(toSync, { merge: true });
+    console.log('[Sync] pushSettings — success');
   } catch (err) {
     console.error('Push settings failed:', err);
   }
@@ -355,22 +357,27 @@ export async function pullSettings() {
 
   try {
     const doc = await firestore.collection('users').doc(user.uid).collection('settings').doc('prefs').get();
-    if (!doc.exists) return;
+    if (!doc.exists) {
+      console.log('[Sync] pullSettings — no remote settings doc found');
+      return;
+    }
 
     const remote = doc.data();
+    console.log('[Sync] pullSettings — remote keys:', Object.keys(remote).filter(k => k !== 'lastModified'));
+    let pulledKeys = [];
     for (const key of SYNCED_SETTING_KEYS) {
       if (remote[key] !== undefined && remote[key] !== null) {
-        // Only overwrite if local has no value set
         const local = await getSetting(key);
         if (local === null || local === undefined) {
           await setSetting(key, remote[key]);
-          // Also backup API key to localStorage
+          pulledKeys.push(key);
           if (key === 'apiKey') {
             try { localStorage.setItem('cw_apiKey', remote[key]); } catch {}
           }
         }
       }
     }
+    console.log('[Sync] pullSettings — pulled keys:', pulledKeys);
   } catch (err) {
     console.error('Pull settings failed:', err);
   }
