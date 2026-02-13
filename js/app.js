@@ -809,6 +809,8 @@ function showCardDetail(card) {
       ${card.status === 'sold' && card.shippingStatus !== 'delivered'
         ? `<button class="btn btn-secondary" id="detail-shipping-btn">${card.shippingStatus === 'shipped' ? 'Update Shipping' : 'Add Shipping'}</button>`
         : ''}
+      <button class="btn btn-secondary" id="detail-share-btn">Share Card</button>
+      ${card.mode === 'collection' ? '<button class="btn btn-secondary" id="detail-duplicate-listing-btn">Duplicate to Listings</button>' : ''}
       <button class="btn btn-secondary" id="detail-move-btn">${card.mode === 'listing' ? 'Move to Collection' : 'Move to Listings'}</button>
       <button class="btn btn-danger" id="detail-delete-btn">Delete Card</button>
     </div>
@@ -904,6 +906,70 @@ function showCardDetail(card) {
       await refreshListings();
       await refreshCollection();
       showCardDetail(card);
+    });
+  }
+
+  // Share card
+  const shareBtn = document.getElementById('detail-share-btn');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      const parts = [];
+      if (card.year) parts.push(card.year);
+      if (card.brand) parts.push(card.brand);
+      if (card.setName) parts.push(card.setName);
+      if (card.player) parts.push(card.player);
+      if (card.parallel) parts.push(card.parallel);
+      if (card.cardNumber) parts.push(`#${card.cardNumber}`);
+      const title = parts.join(' ') || 'Trading Card';
+
+      const lines = [title];
+      if (card.team) lines.push(`Team: ${card.team}`);
+      if (card.graded === 'Yes') lines.push(`Grade: ${card.gradeCompany} ${card.gradeValue}`);
+      if (card.estimatedValueLow && card.estimatedValueHigh) {
+        lines.push(`Value: $${card.estimatedValueLow.toFixed(2)} - $${card.estimatedValueHigh.toFixed(2)}`);
+      }
+      const text = lines.join('\n');
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text });
+        } catch {
+          // User cancelled or share failed
+        }
+      } else {
+        // Fallback: copy to clipboard
+        try {
+          await navigator.clipboard.writeText(text);
+          toast('Card info copied to clipboard', 'success');
+        } catch {
+          toast('Could not share or copy', 'error');
+        }
+      }
+    });
+  }
+
+  // Duplicate collection card to listings
+  const dupBtn = document.getElementById('detail-duplicate-listing-btn');
+  if (dupBtn) {
+    dupBtn.addEventListener('click', async () => {
+      const newCard = createCard({
+        ...card,
+        id: undefined, // Generate new ID
+        mode: 'listing',
+        status: 'pending',
+        ebayListingId: null,
+        ebayListingUrl: null,
+        soldPrice: null,
+        shippingCarrier: '',
+        trackingNumber: '',
+        shippingStatus: 'not_shipped'
+      });
+      newCard.ebayTitle = generateEbayTitle(newCard);
+      newCard.dateAdded = new Date().toISOString();
+      newCard.lastModified = new Date().toISOString();
+      await db.saveCard(newCard);
+      toast('Card duplicated to listings', 'success');
+      await refreshListings();
     });
   }
 
