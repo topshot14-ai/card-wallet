@@ -4,7 +4,11 @@
 import { getSetting, setSetting } from './db.js';
 import { toast } from './ui.js';
 
-const EBAY_AUTH_URL = 'https://auth.ebay.com/oauth2/authorize';
+// Toggle between sandbox and production eBay environments
+const SANDBOX = false;
+const EBAY_AUTH_URL = SANDBOX
+  ? 'https://auth.sandbox.ebay.com/oauth2/authorize'
+  : 'https://auth.ebay.com/oauth2/authorize';
 const SCOPES = [
   'https://api.ebay.com/oauth/api_scope/sell.inventory',
   'https://api.ebay.com/oauth/api_scope/sell.account',
@@ -54,12 +58,16 @@ async function startEbaySignIn() {
     return;
   }
 
-  const redirectUri = window.location.origin + window.location.pathname;
+  const ruName = await getSetting('ebayRuName');
+  if (!ruName) {
+    toast('Enter your eBay RuName in Settings first', 'warning');
+    return;
+  }
 
   const authUrl = new URL(EBAY_AUTH_URL);
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('redirect_uri', ruName);
   authUrl.searchParams.set('scope', SCOPES.join(' '));
 
   window.location.href = authUrl.toString();
@@ -72,7 +80,8 @@ async function exchangeCodeForTokens(code) {
   const workerUrl = await getSetting('ebayWorkerUrl');
   if (!workerUrl) throw new Error('Worker URL not configured');
 
-  const redirectUri = window.location.origin + window.location.pathname;
+  const ruName = await getSetting('ebayRuName');
+  if (!ruName) throw new Error('eBay RuName not configured');
 
   const resp = await fetch(`${workerUrl}/auth/token`, {
     method: 'POST',
@@ -80,7 +89,7 @@ async function exchangeCodeForTokens(code) {
     body: JSON.stringify({
       grant_type: 'authorization_code',
       code,
-      redirect_uri: redirectUri,
+      redirect_uri: ruName,
     }),
   });
 

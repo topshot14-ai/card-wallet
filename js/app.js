@@ -1320,6 +1320,16 @@ function initEbaySettings() {
       db.setSetting('ebayClientId', clientIdInput.value.trim());
     });
   }
+
+  const ruNameInput = $('#setting-ebay-runame');
+  if (ruNameInput) {
+    db.getSetting('ebayRuName').then(val => {
+      if (val) ruNameInput.value = val;
+    });
+    ruNameInput.addEventListener('change', () => {
+      db.setSetting('ebayRuName', ruNameInput.value.trim());
+    });
+  }
 }
 
 // ===== Onboarding (First Run) =====

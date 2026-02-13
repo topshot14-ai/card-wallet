@@ -2,7 +2,7 @@
 
 const MAX_DIMENSION = 1568;
 const THUMB_SIZE = 200;
-const JPEG_QUALITY = 0.85;
+const JPEG_QUALITY = 0.92;
 const THUMB_QUALITY = 0.7;
 
 /**

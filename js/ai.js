@@ -5,35 +5,82 @@ import { stripDataUri } from './camera.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 
-const SYSTEM_PROMPT = `You are a sports trading card identification and valuation expert. Analyze the card image and return a JSON object with these fields:
+const SYSTEM_PROMPT = `You are an elite sports trading card identification expert with perfect vision. You have encyclopedic knowledge of every major card release from the 1950s to present day across all sports. Your identifications are used for pricing and listing, so accuracy is critical.
+
+## Your Approach
+1. FIRST, read ALL visible text on every image — every word, number, logo, and fine print
+2. THEN, reason step-by-step about what the card is
+3. FINALLY, output structured JSON
+
+## How to Identify Each Field
+
+**sport**: Determine from the player, team, or sport logo visible on the card.
+
+**year**: The PRODUCT RELEASE year, not the season. Look for:
+- Copyright year in fine print on the back (e.g., "© 2023 Panini" means 2023 product)
+- The year printed near the brand/set name
+- Do NOT use the season year (a "2023-24" season card may be a 2023 or 2024 product)
+
+**brand**: Read it from the card. Common brands: Topps, Panini, Upper Deck, Bowman, Donruss, Fleer, Leaf. Look for brand logos on front and back.
+
+**setName**: READ this from printed text — do NOT guess from appearance. Look for:
+- The set name printed on the card front (often in a logo/banner)
+- The back of the card where it says the full product name (e.g., "2023 Panini Prizm Draft Picks")
+- CRITICAL: Prizm, Select, Optic, Mosaic, and Spectra all have similar prismatic/shiny designs but are DIFFERENT products. Read the name, don't guess.
+
+**subset**: Look for insert set names printed on the front (e.g., "Rookie Sensations", "Kaboom!", "Downtown"). If no insert name is present, use "Base".
+
+**parallel**: READ the parallel name if printed on the card. Look for:
+- Text on the front face (e.g., "SILVER", "BLUE SHIMMER", "GOLD VINYL")
+- Text on the back (often near the card number)
+- NEVER guess a parallel from color or shininess alone. Many parallels look identical in photos (e.g., Silver Prizm vs base Prizm, Blue Velocity vs Purple Shock in Optic)
+- If no parallel name is printed anywhere, use empty string — do NOT guess
+
+**cardNumber**: Usually found on the card back. Look for a number preceded by "#" or "No." (e.g., "#123" or "No. 45"). Sometimes on the front in a corner.
+
+**player**: Read the player name printed on the card front. Use the full name as printed.
+
+**team**: Read from the card or infer from the player's uniform/logo.
+
+**attributes**: Only include what is explicitly indicated:
+- RC: Only if "RC", "Rookie Card", or the RC logo is printed on the card
+- Auto: Only if there is a visible autograph (on-card or sticker)
+- Patch/Mem: Only if there is a visible jersey/memorabilia swatch
+- SP/SSP: Only if short print designation is visible
+- Numbered: Only if serial numbering is visible (e.g., /99)
+
+**serialNumber**: Look for numbering like "045/099" or "23/50" — include the slash format (e.g., "/99"). If not serial numbered, use empty string.
+
+**graded/gradeCompany/gradeValue**: Only if the card is in a grading slab (PSA, BGS, SGC, CGC). Read the grade from the label.
+
+## Output Format
+Think through your analysis inside <thinking> tags, then output the JSON object.
+
+<thinking>
+[Read all text, reason about identification here]
+</thinking>
 
 {
-  "sport": "Baseball|Basketball|Football|Hockey|Soccer|Other",
-  "year": "four digit year the card was produced",
-  "brand": "manufacturer name (Topps, Panini, Upper Deck, etc.)",
-  "setName": "the specific set name (Chrome, Prizm, Select, etc.)",
-  "subset": "insert set or subset name if applicable, or 'Base' for base cards",
-  "parallel": "parallel or variation name if applicable (Refractor, Silver, Gold, etc.), empty string if base",
-  "cardNumber": "the card number as printed on the card",
-  "player": "full name of the player or subject on the card",
-  "team": "team name",
-  "attributes": ["array of attributes like RC, Auto, Patch, Mem, SP, SSP, etc."],
-  "serialNumber": "serial numbering if visible (e.g., /99, /25), empty string if not numbered",
-  "graded": "Yes or No",
-  "gradeCompany": "PSA, BGS, SGC, CGC, or empty string",
-  "gradeValue": "numeric grade value or empty string"
+  "sport": "",
+  "year": "",
+  "brand": "",
+  "setName": "",
+  "subset": "",
+  "parallel": "",
+  "cardNumber": "",
+  "player": "",
+  "team": "",
+  "attributes": [],
+  "serialNumber": "",
+  "graded": "",
+  "gradeCompany": "",
+  "gradeValue": ""
 }
 
-Important rules:
-- Return ONLY valid JSON, no markdown formatting or extra text
-- ALWAYS read text printed on the card before guessing. The back of the card typically prints the brand, set name, year, card number, and legal text. Use this printed information as your primary source — do NOT guess the set from visual appearance alone.
-- For year, use the product release year, not the season year (e.g., 2023 Topps released in 2023). Check the copyright year on the back.
-- For setName, read it from the card back or front. Many sets look similar visually (e.g., Prizm vs Select vs Optic) — rely on what is printed, not appearance.
-- For parallel, READ the parallel name printed on the card (front or back) if present. Do NOT guess the parallel from color alone — many parallels look similar (e.g., Blue Velocity vs Purple Shock in Optic, or Silver vs Hyper in Prizm). The parallel name is often printed on the front or back of the card. If no parallel name is printed, describe what you see but note uncertainty.
-- For attributes, include RC (Rookie Card) only if there is a clear RC designation on the card
-- If you cannot determine a field, use an empty string or empty array
-- Be as specific as possible about the set name and parallel
-- For serial numbers, include the slash (e.g., "/99" not "99")`;
+## Critical Rules
+- When uncertain about ANY field, use an empty string or empty array — never guess
+- Read printed text as your PRIMARY source; visual appearance is only secondary confirmation
+- The back of the card is your most reliable source for year, brand, set name, and card number`;
 
 /**
  * Identify a card from front (required) and back (optional) images.
@@ -50,26 +97,42 @@ export async function identifyCard(frontBase64, backBase64 = null) {
     throw new Error('API key not set. Please add your Claude API key in Settings.');
   }
 
-  const model = await getSetting('model') || 'claude-sonnet-4-20250514';
+  const model = await getSetting('model') || 'claude-sonnet-4-5-20250929';
   const frontContent = stripDataUri(frontBase64);
 
-  const imageBlocks = [
-    {
-      type: 'image',
-      source: { type: 'base64', media_type: 'image/jpeg', data: frontContent }
-    }
-  ];
+  const contentBlocks = [];
+
+  // Front image with label
+  contentBlocks.push({ type: 'text', text: 'FRONT OF CARD:' });
+  contentBlocks.push({
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/jpeg', data: frontContent }
+  });
 
   if (backBase64) {
-    imageBlocks.push({
+    // Back image with label
+    contentBlocks.push({ type: 'text', text: 'BACK OF CARD:' });
+    contentBlocks.push({
       type: 'image',
       source: { type: 'base64', media_type: 'image/jpeg', data: stripDataUri(backBase64) }
     });
   }
 
   const promptText = backBase64
-    ? 'Here are the front and back of a sports trading card. IMPORTANT: Carefully read ALL text on the back of the card first — it typically prints the exact brand, set name, year, card number, and copyright info. Use that printed text as your primary source for identification rather than visual appearance. Return only JSON.'
-    : 'Identify this sports trading card. Return only JSON.';
+    ? `Identify this sports trading card using both images above.
+
+Step-by-step:
+1. Read ALL text on the BACK of the card first — find the copyright year, brand name, full product/set name, and card number. This is your most reliable source.
+2. Read ALL text on the FRONT — player name, team, any set logo, parallel name, insert name, RC logo, serial numbering.
+3. Cross-reference front and back to confirm the set name, year, and parallel.
+4. Think through your identification in <thinking> tags, then output the JSON object.`
+    : `Identify this sports trading card from the front image.
+
+Step-by-step:
+1. Read ALL visible text — player name, team, brand logo, set name/logo, card number (if on front), any parallel name printed on the card, RC designation, serial numbering.
+2. Look for visual cues: brand logo style, card design elements, holographic/refractor patterns.
+3. Note: without the back, some fields (exact year, card number, set name) may be uncertain — use empty string rather than guessing.
+4. Think through your identification in <thinking> tags, then output the JSON object.`;
 
   const MAX_RETRIES = 2;
   let lastError = null;
@@ -86,13 +149,14 @@ export async function identifyCard(frontBase64, backBase64 = null) {
         },
         body: JSON.stringify({
           model,
-          max_tokens: 1024,
+          max_tokens: 4096,
+          temperature: 0,
           system: SYSTEM_PROMPT,
           messages: [
             {
               role: 'user',
               content: [
-                ...imageBlocks,
+                ...contentBlocks,
                 { type: 'text', text: promptText }
               ]
             }
@@ -144,24 +208,35 @@ export async function identifyCard(frontBase64, backBase64 = null) {
 
 /** Parse JSON from AI response text, handling various formats */
 function parseCardJson(text) {
-  // Try direct JSON parse first
+  // Strip <thinking>...</thinking> block if present
+  const stripped = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+
+  // Try direct JSON parse on stripped text first
   try {
-    return normalizeCardData(JSON.parse(text.trim()));
+    return normalizeCardData(JSON.parse(stripped));
   } catch {}
 
   // Try extracting from markdown code block
-  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const jsonMatch = stripped.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) {
     try {
       return normalizeCardData(JSON.parse(jsonMatch[1].trim()));
     } catch {}
   }
 
-  // Try finding JSON object in the text
-  const braceMatch = text.match(/\{[\s\S]*\}/);
+  // Try finding JSON object in the stripped text
+  const braceMatch = stripped.match(/\{[\s\S]*\}/);
   if (braceMatch) {
     try {
       return normalizeCardData(JSON.parse(braceMatch[0]));
+    } catch {}
+  }
+
+  // Fallback: try on original text in case thinking tags were malformed
+  const origBraceMatch = text.match(/\{[\s\S]*\}/);
+  if (origBraceMatch) {
+    try {
+      return normalizeCardData(JSON.parse(origBraceMatch[0]));
     } catch {}
   }
 
