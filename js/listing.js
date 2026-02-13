@@ -125,10 +125,15 @@ function render() {
   updateFilterCounts();
 
   if (filtered.length === 0) {
-    const msg = listings.length === 0
-      ? 'No listings yet. Scan cards in "List It" mode to add them here.'
-      : 'No listings match this filter.';
-    container.innerHTML = `<p class="empty-state">${msg}</p>`;
+    if (listings.length === 0) {
+      container.innerHTML = `<div class="empty-state-rich">
+        <div class="empty-state-icon">&#128179;</div>
+        <div class="empty-state-title">No listings yet</div>
+        <div class="empty-state-desc">Scan cards in "List It" mode to start building your listing queue.</div>
+      </div>`;
+    } else {
+      container.innerHTML = `<p class="empty-state">No listings match this filter.</p>`;
+    }
     selectAll.checked = false;
     updateBulkButtons();
     return;

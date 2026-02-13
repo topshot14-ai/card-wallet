@@ -77,6 +77,25 @@
         <button id="mode-collection" class="mode-btn" data-mode="collection">Collect It</button>
       </div>
 
+      <!-- Batch Scan Toggle -->
+      <div class="batch-scan-toggle">
+        <label class="toggle-row" style="font-size:13px">
+          <span>Batch Mode</span>
+          <input type="checkbox" id="batch-mode-toggle" class="toggle-input">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
+      <!-- Batch Queue (shown when batch mode is on) -->
+      <div id="batch-queue-section" class="hidden">
+        <div id="batch-queue" class="batch-queue"></div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <label class="btn btn-secondary btn-sm" for="batch-file-input" style="flex:1;cursor:pointer;text-align:center">Upload Multiple Photos</label>
+          <input type="file" id="batch-file-input" accept="image/*" multiple class="hidden">
+          <button id="btn-batch-identify" class="btn btn-primary btn-sm" style="flex:1" disabled>Identify All</button>
+        </div>
+      </div>
+
       <!-- Scan Buttons: Front + Back -->
       <div class="scan-area">
         <div class="scan-pair">
@@ -112,7 +131,11 @@
       <div class="recent-scans">
         <h3>Recent Scans</h3>
         <div id="recent-scans-list" class="recent-scans-list">
-          <p class="empty-state">No cards scanned yet. Tap the camera to start!</p>
+          <div class="empty-state-rich">
+            <div class="empty-state-icon">&#128247;</div>
+            <div class="empty-state-title">No cards scanned yet</div>
+            <div class="empty-state-desc">Tap the camera above to snap a photo of any trading card and get started.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -250,6 +273,12 @@
           </select>
         </div>
 
+        <!-- Purchase Price (both modes) -->
+        <div class="form-group">
+          <label for="field-purchasePrice">Purchase Price ($)</label>
+          <input type="number" id="field-purchasePrice" step="0.01" placeholder="What you paid">
+        </div>
+
         <!-- eBay Title (Listing mode) -->
         <div id="listing-fields" class="form-section">
           <h3>Listing Details</h3>
@@ -274,27 +303,34 @@
           <textarea id="field-notes" rows="2" placeholder="Any additional notes..."></textarea>
         </div>
 
-        <!-- Comp Lookup -->
-        <div class="comp-section">
-          <button type="button" id="btn-lookup-comps" class="btn btn-secondary">Look Up Comps</button>
-          <div id="comp-results" class="comp-results hidden">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="field-compLow">Comp Low</label>
-                <input type="number" id="field-compLow" step="0.01" placeholder="$">
-              </div>
-              <div class="form-group">
-                <label for="field-compAvg">Comp Avg</label>
-                <input type="number" id="field-compAvg" step="0.01" placeholder="$">
-              </div>
-              <div class="form-group">
-                <label for="field-compHigh">Comp High</label>
-                <input type="number" id="field-compHigh" step="0.01" placeholder="$">
-              </div>
+        <!-- Comp data (populated automatically by sold price lookup) -->
+        <div id="comp-results" class="comp-results hidden">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="field-compLow">Comp Low</label>
+              <input type="number" id="field-compLow" step="0.01" placeholder="$">
+            </div>
+            <div class="form-group">
+              <label for="field-compAvg">Comp Avg</label>
+              <input type="number" id="field-compAvg" step="0.01" placeholder="$">
+            </div>
+            <div class="form-group">
+              <label for="field-compHigh">Comp High</label>
+              <input type="number" id="field-compHigh" step="0.01" placeholder="$">
             </div>
           </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ===== DASHBOARD VIEW ===== -->
+  <div id="view-dashboard" class="view" role="main" aria-label="Dashboard">
+    <header class="view-header">
+      <h1>Dashboard</h1>
+    </header>
+    <div class="view-content" id="dashboard-content">
+      <p class="empty-state">Loading...</p>
     </div>
   </div>
 
@@ -323,7 +359,11 @@
         <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden">Delete</button>
       </div>
       <div id="listings-list" class="listings-list">
-        <p class="empty-state">No listings yet. Scan cards in "List It" mode to add them here.</p>
+        <div class="empty-state-rich">
+          <div class="empty-state-icon">&#128179;</div>
+          <div class="empty-state-title">No listings yet</div>
+          <div class="empty-state-desc">Scan cards in "List It" mode to start building your listing queue.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -352,11 +392,22 @@
             <option value="player-desc">Player Z-A</option>
             <option value="year-desc">Year (Newest)</option>
             <option value="year-asc">Year (Oldest)</option>
+            <option value="value-desc">Value (Highest)</option>
+            <option value="value-asc">Value (Lowest)</option>
           </select>
+          <div class="view-mode-toggle">
+            <button class="view-mode-btn active" data-mode="grid" aria-label="Grid view" title="Grid">&#9638;</button>
+            <button class="view-mode-btn" data-mode="list" aria-label="List view" title="List">&#9776;</button>
+            <button class="view-mode-btn" data-mode="binder" aria-label="Binder view" title="Binder">&#128218;</button>
+          </div>
         </div>
       </div>
       <div id="collection-grid" class="collection-grid">
-        <p class="empty-state">Your collection is empty. Scan cards in "Collect It" mode to add them here.</p>
+        <div class="empty-state-rich" style="grid-column:1/-1">
+          <div class="empty-state-icon">&#127183;</div>
+          <div class="empty-state-title">Your collection is empty</div>
+          <div class="empty-state-desc">Scan cards in "Collect It" mode to start building your collection.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -535,7 +586,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v3.1</p>
+      <p class="app-version">Card Wallet v3.2</p>
     </div>
   </div>
 
@@ -547,6 +598,12 @@
         <circle cx="12" cy="13" r="4"/>
       </svg>
       <span>Scan</span>
+    </button>
+    <button class="tab" data-view="dashboard" aria-label="Dashboard">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>
+      </svg>
+      <span>Dashboard</span>
     </button>
     <button class="tab" data-view="listings" aria-label="View listings">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">

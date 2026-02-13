@@ -47,8 +47,13 @@ export function createCard(data = {}) {
     lastModified: data.lastModified || new Date().toISOString(),
     estimatedValueLow: data.estimatedValueLow || null,
     estimatedValueHigh: data.estimatedValueHigh || null,
+    purchasePrice: data.purchasePrice || null,
     ebayListingId: data.ebayListingId || null,
     ebayListingUrl: data.ebayListingUrl || null,
+    soldPrice: data.soldPrice || null,
+    shippingCarrier: data.shippingCarrier || '',
+    trackingNumber: data.trackingNumber || '',
+    shippingStatus: data.shippingStatus || 'not_shipped', // 'not_shipped', 'shipped', 'delivered'
     notes: data.notes || ''
   };
 }

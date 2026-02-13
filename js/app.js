@@ -14,6 +14,7 @@ import { initAuth } from './auth.js';
 import { initSyncListeners, pullAllCards } from './sync.js';
 import { initEbayAuth, isEbayConnected, updateEbayUI } from './ebay-auth.js';
 import { initEbayListing, listCardOnEbay } from './ebay-listing.js';
+import { initDashboard, refreshDashboard } from './dashboard.js';
 
 let currentMode = 'listing';
 let currentCard = null; // Card being reviewed
@@ -22,6 +23,10 @@ let returnView = 'view-scan'; // Where to return after detail view
 // Staged photos before identification
 let stagedFront = null; // { fullBase64, thumbnailBase64, imageBlob, imageThumbnail }
 let stagedBack = null;
+
+// Batch scanning state
+let batchMode = false;
+let batchQueue = []; // Array of { photo, status: 'pending'|'identifying'|'done'|'error', card, error }
 
 // ===== Initialization =====
 
@@ -33,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showView(viewId);
 
       // Refresh data when switching tabs
+      if (tab.dataset.view === 'dashboard') refreshDashboard();
       if (tab.dataset.view === 'listings') refreshListings();
       if (tab.dataset.view === 'collection') refreshCollection();
       if (tab.dataset.view === 'settings') refreshStats();
@@ -54,6 +60,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#scan-clear-front').addEventListener('click', () => clearStagedPhoto('front'));
   $('#scan-clear-back').addEventListener('click', () => clearStagedPhoto('back'));
   $('#btn-identify').addEventListener('click', handleIdentify);
+
+  // Batch mode toggle
+  $('#batch-mode-toggle').addEventListener('change', (e) => {
+    batchMode = e.target.checked;
+    const batchSection = document.getElementById('batch-queue-section');
+    const scanArea = document.querySelector('.scan-area');
+    if (batchMode) {
+      batchSection.classList.remove('hidden');
+      scanArea.classList.add('hidden');
+    } else {
+      batchSection.classList.add('hidden');
+      scanArea.classList.remove('hidden');
+      batchQueue = [];
+      renderBatchQueue();
+    }
+  });
+
+  // Batch file upload (multiple photos)
+  $('#batch-file-input').addEventListener('change', handleBatchFileUpload);
+  $('#btn-batch-identify').addEventListener('click', handleBatchIdentify);
 
   // Add back photo from review screen
   $('#review-add-back-input').addEventListener('change', handleReviewAddBack);
@@ -116,6 +142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initFirebase();
   initAuth();
   initSyncListeners();
+  await initDashboard();
   await initListings();
   await initCollection();
   await initSettings();
@@ -407,6 +434,7 @@ function populateReviewForm(card) {
   $('#field-condition').value = card.condition || 'Near Mint or Better';
   $('#field-ebayTitle').value = card.ebayTitle || '';
   $('#field-startPrice').value = card.startPrice || '';
+  $('#field-purchasePrice').value = card.purchasePrice || '';
   $('#field-notes').value = card.notes || '';
 
   // Comp fields
@@ -461,6 +489,7 @@ function readFormIntoCard() {
   currentCard.condition = $('#field-condition').value;
   currentCard.ebayTitle = $('#field-ebayTitle').value.trim();
   currentCard.startPrice = parseFloat($('#field-startPrice').value) || 0.99;
+  currentCard.purchasePrice = parseFloat($('#field-purchasePrice').value) || null;
   currentCard.notes = $('#field-notes').value.trim();
 
   // Comp data
@@ -573,7 +602,11 @@ async function loadRecentScans() {
   const container = $('#recent-scans-list');
 
   if (recent.length === 0) {
-    container.innerHTML = '<p class="empty-state">No cards scanned yet. Tap the camera to start!</p>';
+    container.innerHTML = `<div class="empty-state-rich">
+      <div class="empty-state-icon">&#128247;</div>
+      <div class="empty-state-title">No cards scanned yet</div>
+      <div class="empty-state-desc">Tap the camera above to snap a photo of any trading card and get started.</div>
+    </div>`;
     return;
   }
 
@@ -628,9 +661,31 @@ function showCardDetail(card) {
     fields.push(['Est. Value', `~$${Number(card.estimatedValueLow).toFixed(2)}`]);
   }
 
+  if (card.purchasePrice) {
+    fields.push(['Cost', `$${Number(card.purchasePrice).toFixed(2)}`]);
+  }
+
   if (card.mode === 'listing') {
     fields.push(['eBay Title', card.ebayTitle]);
     fields.push(['Start Price', card.startPrice ? `$${Number(card.startPrice).toFixed(2)}` : '']);
+  }
+
+  if (card.soldPrice) {
+    fields.push(['Sold For', `$${Number(card.soldPrice).toFixed(2)}`]);
+    if (card.purchasePrice) {
+      const profit = card.soldPrice - card.purchasePrice;
+      const profitClass = profit >= 0 ? 'profit-positive' : 'profit-negative';
+      fields.push(['Profit', `<span class="${profitClass}">${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}</span>`]);
+    }
+  }
+
+  if (card.shippingStatus && card.shippingStatus !== 'not_shipped') {
+    const statusLabel = card.shippingStatus === 'shipped' ? 'Shipped' : 'Delivered';
+    let shippingStr = statusLabel;
+    if (card.trackingNumber) {
+      shippingStr += ` — ${card.shippingCarrier || ''} ${card.trackingNumber}`;
+    }
+    fields.push(['Shipping', shippingStr.trim()]);
   }
 
   if (card.compData && (card.compData.low || card.compData.avg || card.compData.high)) {
@@ -692,8 +747,10 @@ function showCardDetail(card) {
       ${card.mode === 'listing' && card.status === 'sold'
         ? '<button class="btn btn-secondary" id="detail-mark-unsold-btn">Mark as Unsold</button>'
         : ''}
+      ${card.status === 'sold' && card.shippingStatus !== 'delivered'
+        ? `<button class="btn btn-secondary" id="detail-shipping-btn">${card.shippingStatus === 'shipped' ? 'Update Shipping' : 'Add Shipping'}</button>`
+        : ''}
       <button class="btn btn-secondary" id="detail-move-btn">${card.mode === 'listing' ? 'Move to Collection' : 'Move to Listings'}</button>
-      <button class="btn btn-secondary" id="detail-comp-btn">Look Up Comps</button>
       <button class="btn btn-danger" id="detail-delete-btn">Delete Card</button>
     </div>
   `;
@@ -713,16 +770,53 @@ function showCardDetail(card) {
     });
   }
 
-  // Mark as Sold
+  // Mark as Sold (prompt for sold price)
   const soldBtn = document.getElementById('detail-mark-sold-btn');
   if (soldBtn) {
     soldBtn.addEventListener('click', async () => {
-      card.status = 'sold';
-      card.lastModified = new Date().toISOString();
-      await db.saveCard(card);
-      toast('Card marked as sold', 'success');
-      await refreshListings();
-      showCardDetail(card);
+      const { showModal: showSoldModal } = await import('./ui.js');
+      // Create a custom modal with price input
+      const overlay = document.getElementById('modal-overlay');
+      document.getElementById('modal-title').textContent = 'Mark as Sold';
+      document.getElementById('modal-message').textContent = '';
+      const actionsContainer = document.getElementById('modal-actions');
+      actionsContainer.innerHTML = '';
+
+      // Build custom content
+      const msgEl = document.getElementById('modal-message');
+      msgEl.innerHTML = `
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="font-size:13px;font-weight:500;color:var(--gray-600)">Sold Price ($)</label>
+          <input type="number" id="modal-sold-price" step="0.01" placeholder="${card.startPrice || '0.00'}" value="${card.startPrice || ''}" style="padding:10px 12px;border:1px solid var(--gray-300);border-radius:8px;font-size:15px;width:100%;margin-top:4px">
+        </div>
+      `;
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-secondary btn-sm';
+      cancelBtn.textContent = 'Cancel';
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'btn btn-success btn-sm';
+      confirmBtn.textContent = 'Mark Sold';
+
+      actionsContainer.appendChild(cancelBtn);
+      actionsContainer.appendChild(confirmBtn);
+      overlay.classList.remove('hidden');
+
+      await new Promise(resolve => {
+        cancelBtn.addEventListener('click', () => { overlay.classList.add('hidden'); resolve(); });
+        confirmBtn.addEventListener('click', async () => {
+          overlay.classList.add('hidden');
+          const soldPrice = parseFloat(document.getElementById('modal-sold-price').value) || card.startPrice || 0;
+          card.status = 'sold';
+          card.soldPrice = soldPrice;
+          card.lastModified = new Date().toISOString();
+          await db.saveCard(card);
+          toast('Card marked as sold', 'success');
+          await refreshListings();
+          showCardDetail(card);
+          resolve();
+        });
+      });
     });
   }
 
@@ -754,11 +848,63 @@ function showCardDetail(card) {
     });
   }
 
-  // Comp lookup from detail
-  $('#detail-comp-btn').addEventListener('click', async () => {
-    currentCard = card;
-    await handleCompLookup();
-  });
+  // Shipping from detail
+  const shippingBtn = document.getElementById('detail-shipping-btn');
+  if (shippingBtn) {
+    shippingBtn.addEventListener('click', async () => {
+      const overlay = document.getElementById('modal-overlay');
+      document.getElementById('modal-title').textContent = 'Shipping Details';
+      const msgEl = document.getElementById('modal-message');
+      msgEl.innerHTML = `
+        <div class="form-group" style="margin-bottom:10px">
+          <label style="font-size:13px;font-weight:500;color:var(--gray-600)">Carrier</label>
+          <select id="modal-carrier" style="padding:10px 12px;border:1px solid var(--gray-300);border-radius:8px;font-size:15px;width:100%;margin-top:4px">
+            <option value="USPS" ${card.shippingCarrier === 'USPS' ? 'selected' : ''}>USPS</option>
+            <option value="UPS" ${card.shippingCarrier === 'UPS' ? 'selected' : ''}>UPS</option>
+            <option value="FedEx" ${card.shippingCarrier === 'FedEx' ? 'selected' : ''}>FedEx</option>
+            <option value="Other" ${card.shippingCarrier === 'Other' ? 'selected' : ''}>Other</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label style="font-size:13px;font-weight:500;color:var(--gray-600)">Tracking Number</label>
+          <input type="text" id="modal-tracking" value="${escapeHtml(card.trackingNumber || '')}" placeholder="Tracking number" style="padding:10px 12px;border:1px solid var(--gray-300);border-radius:8px;font-size:15px;width:100%;margin-top:4px">
+        </div>
+        <div class="form-group">
+          <label style="font-size:13px;font-weight:500;color:var(--gray-600)">Status</label>
+          <select id="modal-ship-status" style="padding:10px 12px;border:1px solid var(--gray-300);border-radius:8px;font-size:15px;width:100%;margin-top:4px">
+            <option value="shipped" ${card.shippingStatus === 'shipped' ? 'selected' : ''}>Shipped</option>
+            <option value="delivered" ${card.shippingStatus === 'delivered' ? 'selected' : ''}>Delivered</option>
+          </select>
+        </div>
+      `;
+      const actionsContainer = document.getElementById('modal-actions');
+      actionsContainer.innerHTML = '';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-secondary btn-sm';
+      cancelBtn.textContent = 'Cancel';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn btn-primary btn-sm';
+      saveBtn.textContent = 'Save';
+      actionsContainer.appendChild(cancelBtn);
+      actionsContainer.appendChild(saveBtn);
+      overlay.classList.remove('hidden');
+
+      await new Promise(resolve => {
+        cancelBtn.addEventListener('click', () => { overlay.classList.add('hidden'); resolve(); });
+        saveBtn.addEventListener('click', async () => {
+          overlay.classList.add('hidden');
+          card.shippingCarrier = document.getElementById('modal-carrier').value;
+          card.trackingNumber = document.getElementById('modal-tracking').value.trim();
+          card.shippingStatus = document.getElementById('modal-ship-status').value;
+          card.lastModified = new Date().toISOString();
+          await db.saveCard(card);
+          toast('Shipping info saved', 'success');
+          showCardDetail(card);
+          resolve();
+        });
+      });
+    });
+  }
 
   // Delete from detail (soft delete → trash)
   $('#detail-delete-btn').addEventListener('click', async () => {
@@ -1064,6 +1210,158 @@ async function checkApiKeyGate() {
 
 // Re-check gate when returning to scan view
 window.addEventListener('apikey-changed', () => checkApiKeyGate());
+
+// ===== Batch Scanning =====
+
+async function handleBatchFileUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  e.target.value = '';
+
+  showLoading(`Processing ${files.length} photo${files.length > 1 ? 's' : ''}...`);
+
+  for (const file of files) {
+    try {
+      const photo = await processPhoto(file);
+      batchQueue.push({
+        photo,
+        status: 'pending',
+        card: null,
+        error: null
+      });
+    } catch (err) {
+      batchQueue.push({
+        photo: null,
+        status: 'error',
+        card: null,
+        error: 'Failed to process photo'
+      });
+    }
+  }
+
+  hideLoading();
+  renderBatchQueue();
+  updateBatchIdentifyButton();
+}
+
+function renderBatchQueue() {
+  const container = document.getElementById('batch-queue');
+  if (!container) return;
+
+  if (batchQueue.length === 0) {
+    container.innerHTML = '<p class="empty-state" style="padding:16px 0;font-size:13px">Upload photos of cards to scan in batch.</p>';
+    return;
+  }
+
+  container.innerHTML = batchQueue.map((item, i) => {
+    let statusHtml = '';
+    let statusClass = '';
+    if (item.status === 'pending') {
+      statusHtml = 'Ready to scan';
+    } else if (item.status === 'identifying') {
+      statusHtml = 'Identifying...';
+      statusClass = '';
+    } else if (item.status === 'done') {
+      statusHtml = item.card ? escapeHtml(item.card.player || 'Identified') : 'Done';
+      statusClass = 'identified';
+    } else if (item.status === 'error') {
+      statusHtml = item.error || 'Error';
+      statusClass = 'error';
+    }
+
+    const thumb = item.photo ? item.photo.thumbnailBase64 : '';
+    return `
+      <div class="batch-queue-item">
+        ${thumb ? `<img src="${thumb}" alt="Card ${i + 1}">` : '<div style="width:48px;height:48px;background:var(--gray-100);border-radius:4px"></div>'}
+        <span class="batch-queue-status ${statusClass}">${statusHtml}</span>
+        <button class="btn btn-danger btn-sm batch-remove-btn" data-index="${i}" style="padding:4px 8px;font-size:11px">&times;</button>
+      </div>
+    `;
+  }).join('');
+
+  // Wire up remove buttons
+  container.querySelectorAll('.batch-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.index);
+      batchQueue.splice(idx, 1);
+      renderBatchQueue();
+      updateBatchIdentifyButton();
+    });
+  });
+}
+
+function updateBatchIdentifyButton() {
+  const btn = document.getElementById('btn-batch-identify');
+  const pendingCount = batchQueue.filter(q => q.status === 'pending').length;
+  btn.disabled = pendingCount === 0;
+  btn.textContent = pendingCount > 0 ? `Identify All (${pendingCount})` : 'Identify All';
+}
+
+async function handleBatchIdentify() {
+  const pending = batchQueue.filter(q => q.status === 'pending');
+  if (pending.length === 0) return;
+
+  const defaults = await getDefaults();
+  let processed = 0;
+
+  for (const item of pending) {
+    if (!item.photo) continue;
+
+    item.status = 'identifying';
+    renderBatchQueue();
+
+    try {
+      const aiData = await identifyCard(item.photo.fullBase64, null);
+
+      const card = createCard({
+        mode: currentMode,
+        sport: aiData.sport || defaults.sport,
+        year: aiData.year || '',
+        brand: aiData.brand || '',
+        setName: aiData.setName || '',
+        subset: aiData.subset || '',
+        parallel: aiData.parallel || '',
+        cardNumber: aiData.cardNumber || '',
+        player: aiData.player || '',
+        team: aiData.team || '',
+        attributes: aiData.attributes || [],
+        serialNumber: aiData.serialNumber || '',
+        graded: aiData.graded || 'No',
+        gradeCompany: aiData.gradeCompany || '',
+        gradeValue: aiData.gradeValue || '',
+        estimatedValueLow: null,
+        estimatedValueHigh: null,
+        condition: defaults.condition,
+        startPrice: defaults.startPrice,
+        imageBlob: item.photo.imageBlob,
+        imageThumbnail: item.photo.thumbnailBase64
+      });
+
+      card.ebayTitle = generateEbayTitle(card);
+      await db.saveCard(card);
+
+      // Auto-fetch sold prices in background
+      autoFetchSoldPrices(card);
+
+      item.card = card;
+      item.status = 'done';
+      processed++;
+    } catch (err) {
+      item.status = 'error';
+      item.error = err.message || 'AI identification failed';
+    }
+
+    renderBatchQueue();
+    updateBatchIdentifyButton();
+  }
+
+  if (processed > 0) {
+    toast(`${processed} card${processed > 1 ? 's' : ''} identified and saved`, 'success');
+    await refreshListings();
+    await refreshCollection();
+    await loadRecentScans();
+  }
+}
 
 function escapeHtml(str) {
   const div = document.createElement('div');

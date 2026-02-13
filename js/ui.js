@@ -86,7 +86,7 @@ export function showView(viewId) {
   }
 
   // Update tab bar active state for main views
-  const mainViews = ['view-scan', 'view-listings', 'view-collection', 'view-settings'];
+  const mainViews = ['view-scan', 'view-dashboard', 'view-listings', 'view-collection', 'view-settings'];
   if (mainViews.includes(viewId)) {
     document.querySelectorAll('.tab').forEach(tab => {
       tab.classList.toggle('active', `view-${tab.dataset.view}` === viewId);
@@ -101,7 +101,7 @@ export function goBack() {
     document.getElementById(prevId)?.classList.add('active');
 
     // Update tab bar
-    const mainViews = ['view-scan', 'view-listings', 'view-collection', 'view-settings'];
+    const mainViews = ['view-scan', 'view-dashboard', 'view-listings', 'view-collection', 'view-settings'];
     if (mainViews.includes(prevId)) {
       document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.toggle('active', `view-${tab.dataset.view}` === prevId);
