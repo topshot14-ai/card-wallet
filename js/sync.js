@@ -3,7 +3,7 @@
 
 import { isFirebaseConfigured, getFirestore } from './firebase.js';
 import { getCurrentUser } from './auth.js';
-import { saveCardLocal, getAllCards } from './db.js';
+import { saveCardLocal, getAllCards, getSetting, setSetting, getAllSettings } from './db.js';
 
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'error'
 
@@ -147,6 +147,66 @@ export async function deleteCardRemote(cardId) {
   }
 }
 
+// ===== Settings Sync =====
+
+// Keys to sync to Firestore (excludes sensitive tokens like eBay auth)
+const SYNCED_SETTING_KEYS = ['apiKey', 'model', 'defaultSport', 'defaultCondition', 'defaultPrice', 'ebayWorkerUrl'];
+
+export async function pushSettings() {
+  if (!isFirebaseConfigured()) return;
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const firestore = getFirestore();
+  if (!firestore) return;
+
+  try {
+    const allSettings = await getAllSettings();
+    const toSync = {};
+    for (const key of SYNCED_SETTING_KEYS) {
+      if (allSettings[key] !== undefined && allSettings[key] !== null) {
+        toSync[key] = allSettings[key];
+      }
+    }
+    toSync.lastModified = new Date().toISOString();
+
+    await firestore.collection('users').doc(user.uid).collection('settings').doc('prefs').set(toSync, { merge: true });
+  } catch (err) {
+    console.error('Push settings failed:', err);
+  }
+}
+
+export async function pullSettings() {
+  if (!isFirebaseConfigured()) return;
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const firestore = getFirestore();
+  if (!firestore) return;
+
+  try {
+    const doc = await firestore.collection('users').doc(user.uid).collection('settings').doc('prefs').get();
+    if (!doc.exists) return;
+
+    const remote = doc.data();
+    for (const key of SYNCED_SETTING_KEYS) {
+      if (remote[key] !== undefined && remote[key] !== null) {
+        // Only overwrite if local is empty
+        const local = await getSetting(key);
+        if (!local) {
+          await setSetting(key, remote[key]);
+          // Also backup API key to localStorage
+          if (key === 'apiKey') {
+            try { localStorage.setItem('cw_apiKey', remote[key]); } catch {}
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Pull settings failed:', err);
+  }
+}
+
 // ===== Event Listeners: auto-push on local changes =====
 
 export function initSyncListeners() {
@@ -163,6 +223,10 @@ export function initSyncListeners() {
       await deleteCardRemote(id);
     }
   });
+
+  // Push settings to cloud when API key or other settings change
+  window.addEventListener('apikey-changed', () => pushSettings());
+  window.addEventListener('settings-changed', () => pushSettings());
 
   window.addEventListener('cards-deleted', async (e) => {
     const { ids } = e.detail;

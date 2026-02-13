@@ -3,7 +3,7 @@
 import * as db from './db.js';
 import { toast, confirm, $ } from './ui.js';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut } from './auth.js';
-import { pullAllCards } from './sync.js';
+import { pullAllCards, pullSettings } from './sync.js';
 
 export async function initSettings() {
   // Load saved settings
@@ -47,21 +47,25 @@ export async function initSettings() {
   $('#setting-model').addEventListener('change', async (e) => {
     await db.setSetting('model', e.target.value);
     toast('Model updated', 'success');
+    window.dispatchEvent(new CustomEvent('settings-changed'));
   });
 
   // Default sport
   $('#setting-default-sport').addEventListener('change', async (e) => {
     await db.setSetting('defaultSport', e.target.value);
+    window.dispatchEvent(new CustomEvent('settings-changed'));
   });
 
   // Default condition
   $('#setting-default-condition').addEventListener('change', async (e) => {
     await db.setSetting('defaultCondition', e.target.value);
+    window.dispatchEvent(new CustomEvent('settings-changed'));
   });
 
   // Default price
   $('#setting-default-price').addEventListener('change', async (e) => {
     await db.setSetting('defaultPrice', parseFloat(e.target.value) || 0.99);
+    window.dispatchEvent(new CustomEvent('settings-changed'));
   });
 
   // Export data
@@ -183,8 +187,10 @@ export async function initSettings() {
     if (signedIn) {
       showAccountState('signed-in');
       $('#auth-user-email').textContent = user.email || user.displayName || 'Signed In';
-      // Reload settings to restore API key (may have been cleared from IndexedDB)
+      // Pull settings from cloud (restores API key in private tabs / new devices)
+      await pullSettings();
       await loadSettings();
+      window.dispatchEvent(new CustomEvent('apikey-changed'));
     } else {
       showAccountState('signed-out');
       $('#auth-email').value = '';
