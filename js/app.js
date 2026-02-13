@@ -10,7 +10,7 @@ import { initCollection, refreshCollection } from './collection.js';
 import { initSettings, refreshStats, getDefaults } from './settings.js';
 import { initFirebase } from './firebase.js';
 import { initAuth } from './auth.js';
-import { initSyncListeners, pullAllCards, pullSettings } from './sync.js';
+import { initSyncListeners, pullAllCards, pullSettings, pushSettings } from './sync.js';
 import { initEbayAuth, isEbayConnected, updateEbayUI } from './ebay-auth.js';
 import { initEbayListing, listCardOnEbay } from './ebay-listing.js';
 import { initDashboard, refreshDashboard } from './dashboard.js';
@@ -180,7 +180,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('auth-state-changed', async (e) => {
     if (e.detail.signedIn) {
       try {
-        await pullSettings();
+        await pushSettings();  // push local settings to cloud first
+        await pullSettings();  // then pull anything missing from cloud
         await pullAllCards();
         await refreshListings();
         await refreshCollection();
