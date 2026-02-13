@@ -186,12 +186,13 @@ export async function pushCard(card) {
 // ===== Pull: Cloud → Local (merge by lastModified) =====
 
 export async function pullAllCards() {
-  if (!isFirebaseConfigured()) return;
+  console.log('[Sync] pullAllCards — called');
+  if (!isFirebaseConfigured()) { console.log('[Sync] pullAllCards — firebase not configured, returning'); return; }
   const user = getCurrentUser();
-  if (!user) return;
+  if (!user) { console.log('[Sync] pullAllCards — no user, returning'); return; }
 
   const firestore = getFirestore();
-  if (!firestore) return;
+  if (!firestore) { console.log('[Sync] pullAllCards — no firestore, returning'); return; }
 
   try {
     setSyncStatus('syncing');
@@ -202,6 +203,7 @@ export async function pullAllCards() {
 
     const localCards = await getAllCards();
     const localMap = new Map(localCards.map(c => [c.id, c]));
+    console.log('[Sync] pullAllCards — remote:', snapshot.docs.length, 'local:', localCards.length);
 
     let pullCount = 0;
     let conflictCount = 0;
