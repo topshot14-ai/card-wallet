@@ -77,6 +77,17 @@ export async function signInWithGoogle() {
   }
 }
 
+export async function resetPassword(email) {
+  const auth = getAuth();
+  if (!auth) throw new Error('Firebase not configured');
+
+  try {
+    await auth.sendPasswordResetEmail(email);
+  } catch (err) {
+    throw new Error(friendlyAuthError(err.code));
+  }
+}
+
 export async function signOut() {
   const auth = getAuth();
   if (!auth) return;

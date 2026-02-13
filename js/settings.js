@@ -2,7 +2,7 @@
 
 import * as db from './db.js';
 import { toast, confirm, $ } from './ui.js';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle, signOut as authSignOut } from './auth.js';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut } from './auth.js';
 import { pullAllCards } from './sync.js';
 
 export async function initSettings() {
@@ -144,6 +144,17 @@ export async function initSettings() {
   $('#btn-google-sign-in').addEventListener('click', async () => {
     try {
       await signInWithGoogle();
+    } catch (err) {
+      toast(err.message, 'error', 4000);
+    }
+  });
+
+  $('#btn-forgot-password').addEventListener('click', async () => {
+    const email = $('#auth-email').value.trim();
+    if (!email) { toast('Enter your email address first', 'warning'); return; }
+    try {
+      await resetPassword(email);
+      toast('Password reset email sent. Check your inbox.', 'success', 4000);
     } catch (err) {
       toast(err.message, 'error', 4000);
     }
