@@ -100,103 +100,67 @@
         <button id="mode-collection" class="mode-btn" data-mode="collection">Collect It</button>
       </div>
 
-      <!-- Scan Options Row -->
-      <div class="scan-options-row">
+      <!-- Manual Entry -->
+      <div style="margin-bottom:12px">
         <button id="btn-manual-entry" class="btn btn-secondary btn-sm">+ Manual Entry</button>
-        <label class="toggle-row" style="font-size:13px">
-          <span>Batch</span>
-          <input type="checkbox" id="batch-mode-toggle" class="toggle-input">
-          <span class="toggle-switch"></span>
-        </label>
       </div>
 
-      <!-- Scan Area: Normal single-card mode -->
-      <div class="scan-area" id="scan-area-normal">
-        <div class="scan-pair">
-          <div class="scan-slot" id="scan-slot-front">
+      <!-- Scan Wizard (unified single + multi-card flow) -->
+      <div class="scan-area" id="scan-wizard">
+        <!-- Step 1: Front -->
+        <div id="scan-step-front" class="batch-step">
+          <div class="batch-step-label">Step 1: Front of Card</div>
+          <div class="scan-slot batch-scan-slot" id="scan-slot-front">
             <label class="scan-btn" for="camera-input-front">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
               </svg>
-              <span>Front</span>
+              <span>Tap to Scan</span>
             </label>
             <img id="scan-preview-front" class="scan-preview hidden" alt="Front preview">
-            <button id="scan-clear-front" class="scan-clear-btn hidden" aria-label="Remove front photo">&times;</button>
           </div>
-          <div class="scan-slot" id="scan-slot-back">
-            <label class="scan-btn scan-btn-back" for="camera-input-back">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
-              </svg>
-              <span>Back (optional)</span>
-            </label>
-            <img id="scan-preview-back" class="scan-preview hidden" alt="Back preview">
-            <button id="scan-clear-back" class="scan-clear-btn hidden" aria-label="Remove back photo">&times;</button>
-          </div>
-        </div>
-        <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden">
-        <input type="file" id="camera-input-back" accept="image/*" capture="environment" class="hidden">
-        <button id="btn-identify" class="btn btn-primary identify-btn hidden">Identify Card</button>
-      </div>
-
-      <!-- Scan Area: Batch wizard mode -->
-      <div class="scan-area hidden" id="scan-area-batch">
-        <!-- Step 1: Front -->
-        <div id="batch-step-front" class="batch-step">
-          <div class="batch-step-label">Step 1: Front of Card</div>
-          <div class="scan-slot batch-scan-slot" id="batch-slot-front">
-            <label class="scan-btn" for="batch-camera-front">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
-              </svg>
-              <span>Tap to Scan Front</span>
-            </label>
-            <img id="batch-preview-front" class="scan-preview hidden" alt="Front preview">
-          </div>
-          <input type="file" id="batch-camera-front" accept="image/*" capture="environment" class="hidden">
+          <input type="file" id="camera-input-front" accept="image/*" capture="environment" class="hidden">
         </div>
 
         <!-- Step 2: Back -->
-        <div id="batch-step-back" class="batch-step hidden">
+        <div id="scan-step-back" class="batch-step hidden">
           <div class="batch-step-label">Step 2: Back of Card</div>
-          <div class="scan-slot batch-scan-slot" id="batch-slot-back">
-            <label class="scan-btn" for="batch-camera-back">
+          <div class="scan-slot batch-scan-slot" id="scan-slot-back">
+            <label class="scan-btn" for="camera-input-back">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
               </svg>
-              <span>Tap to Scan Back</span>
+              <span>Tap to Scan</span>
             </label>
-            <img id="batch-preview-back" class="scan-preview hidden" alt="Back preview">
+            <img id="scan-preview-back" class="scan-preview hidden" alt="Back preview">
           </div>
-          <input type="file" id="batch-camera-back" accept="image/*" capture="environment" class="hidden">
-          <button id="btn-batch-skip-back" class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%">Skip Back</button>
+          <input type="file" id="camera-input-back" accept="image/*" capture="environment" class="hidden">
+          <button id="btn-skip-back" class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%">Skip Back</button>
         </div>
 
-        <!-- Step 3: Card added prompt -->
-        <div id="batch-step-added" class="batch-step hidden">
+        <!-- Step 3: Card ready prompt -->
+        <div id="scan-step-ready" class="batch-step hidden">
           <div class="batch-added-check">&#10003;</div>
-          <div class="batch-added-text">Card added to batch!</div>
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <button id="btn-batch-scan-next" class="btn btn-primary" style="flex:1;white-space:nowrap">Scan Next Card</button>
-            <button id="btn-batch-done" class="btn btn-secondary" style="flex:1;white-space:nowrap">Done (<span id="batch-done-count">0</span>)</button>
+          <div class="batch-added-text">Card ready!</div>
+          <div style="display:flex;gap:8px;margin-top:12px;width:100%">
+            <button id="btn-identify-now" class="btn btn-primary" style="flex:1;white-space:nowrap">Identify Card</button>
+            <button id="btn-scan-more" class="btn btn-secondary" style="flex:1;white-space:nowrap">Scan More</button>
           </div>
         </div>
 
-        <!-- Gallery upload option -->
+        <!-- Upload from gallery -->
         <div style="margin-top:12px;text-align:center">
-          <label class="btn btn-secondary btn-sm" for="batch-file-input" style="cursor:pointer">+ Upload from Gallery</label>
-          <input type="file" id="batch-file-input" accept="image/*" multiple class="hidden">
+          <label class="btn btn-secondary btn-sm" for="gallery-upload" style="cursor:pointer">+ Upload from Gallery</label>
+          <input type="file" id="gallery-upload" accept="image/*" multiple class="hidden">
         </div>
       </div>
 
-      <!-- Batch Queue (shown when batch mode is on) -->
-      <div id="batch-queue-section" class="hidden">
-        <div id="batch-queue" class="batch-queue"></div>
-        <button id="btn-batch-identify" class="btn btn-primary" style="width:100%;margin-bottom:12px" disabled>Identify All</button>
+      <!-- Scan Queue (appears when multiple cards are queued) -->
+      <div id="scan-queue-section" class="hidden">
+        <div id="scan-queue" class="batch-queue"></div>
+        <button id="btn-identify-all" class="btn btn-primary" style="width:100%;margin-bottom:12px" disabled>Identify All</button>
       </div>
 
       <!-- Recent Scans -->
@@ -668,7 +632,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v3.5</p>
+      <p class="app-version">Card Wallet v4.0</p>
     </div>
   </div>
 

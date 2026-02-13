@@ -22,10 +22,11 @@ let returnView = 'view-scan'; // Where to return after detail view
 // Staged photos before identification
 let stagedFront = null; // { fullBase64, thumbnailBase64, imageBlob, imageThumbnail }
 let stagedBack = null;
+// Used by review screen to re-add photos
 
-// Batch scanning state
-let batchMode = false;
-let batchQueue = []; // Array of { photo, status: 'pending'|'identifying'|'done'|'error', card, error }
+
+// Scan queue (unified single + multi-card flow)
+let scanQueue = []; // Array of { photo, backPhoto, status, card, error }
 
 // ===== Initialization =====
 
@@ -53,46 +54,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Camera inputs (front + back)
-  $('#camera-input-front').addEventListener('change', (e) => handleStagedPhoto(e, 'front'));
-  $('#camera-input-back').addEventListener('change', (e) => handleStagedPhoto(e, 'back'));
-  $('#scan-clear-front').addEventListener('click', () => clearStagedPhoto('front'));
-  $('#scan-clear-back').addEventListener('click', () => clearStagedPhoto('back'));
-  $('#btn-identify').addEventListener('click', handleIdentify);
-
   // Manual entry button
   $('#btn-manual-entry').addEventListener('click', handleManualEntry);
 
-  // Batch mode toggle — switches between normal scan area and batch wizard
-  $('#batch-mode-toggle').addEventListener('change', (e) => {
-    batchMode = e.target.checked;
-    const normalArea = document.getElementById('scan-area-normal');
-    const batchArea = document.getElementById('scan-area-batch');
-    const batchSection = document.getElementById('batch-queue-section');
-    if (batchMode) {
-      normalArea.classList.add('hidden');
-      batchArea.classList.remove('hidden');
-      batchSection.classList.remove('hidden');
-      resetBatchWizard();
-    } else {
-      normalArea.classList.remove('hidden');
-      batchArea.classList.add('hidden');
-      batchSection.classList.add('hidden');
-      batchQueue = [];
-      renderBatchQueue();
-    }
-  });
-
-  // Batch wizard camera inputs
-  $('#batch-camera-front').addEventListener('change', handleBatchFront);
-  $('#batch-camera-back').addEventListener('change', handleBatchBack);
-  $('#btn-batch-skip-back').addEventListener('click', handleBatchSkipBack);
-  $('#btn-batch-scan-next').addEventListener('click', resetBatchWizard);
-  $('#btn-batch-done').addEventListener('click', handleBatchIdentify);
-
-  // Batch file upload (gallery) and identify
-  $('#batch-file-input').addEventListener('change', handleBatchFileUpload);
-  $('#btn-batch-identify').addEventListener('click', handleBatchIdentify);
+  // Scan wizard — unified step-by-step flow
+  $('#camera-input-front').addEventListener('change', handleScanFront);
+  $('#camera-input-back').addEventListener('change', handleScanBack);
+  $('#btn-skip-back').addEventListener('click', handleSkipBack);
+  $('#btn-identify-now').addEventListener('click', handleIdentifyNow);
+  $('#btn-scan-more').addEventListener('click', handleScanMore);
+  $('#gallery-upload').addEventListener('change', handleGalleryUpload);
+  $('#btn-identify-all').addEventListener('click', handleIdentifyAll);
 
   // Add front/back photo from review screen
   $('#review-add-front-input').addEventListener('change', handleReviewAddFront);
@@ -222,61 +194,140 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ===== Photo Capture (staged front + back) =====
 
-async function handleStagedPhoto(e, side) {
+// ===== Scan Wizard (unified single + multi-card flow) =====
+
+function resetScanWizard() {
+  stagedFront = null;
+  stagedBack = null;
+
+  // Show step 1, hide step 2 and ready prompt
+  document.getElementById('scan-step-front').classList.remove('hidden');
+  document.getElementById('scan-step-back').classList.add('hidden');
+  document.getElementById('scan-step-ready').classList.add('hidden');
+
+  // Clear previews
+  const fp = document.getElementById('scan-preview-front');
+  fp.classList.add('hidden');
+  fp.src = '';
+  document.querySelector('#scan-slot-front .scan-btn').style.display = '';
+
+  const bp = document.getElementById('scan-preview-back');
+  bp.classList.add('hidden');
+  bp.src = '';
+  document.querySelector('#scan-slot-back .scan-btn').style.display = '';
+
+  // Reset file inputs
+  document.getElementById('camera-input-front').value = '';
+  document.getElementById('camera-input-back').value = '';
+}
+
+async function handleScanFront(e) {
   const file = e.target.files[0];
   if (!file) return;
   e.target.value = '';
 
-  showLoading('Processing photo...');
+  showLoading('Processing front...');
   try {
-    const photo = await processPhoto(file);
+    stagedFront = await processPhoto(file);
     hideLoading();
 
-    if (side === 'front') {
-      stagedFront = photo;
-      $('#scan-preview-front').src = photo.thumbnailBase64;
-      $('#scan-preview-front').classList.remove('hidden');
-      $('#scan-clear-front').classList.remove('hidden');
-    } else {
-      stagedBack = photo;
-      $('#scan-preview-back').src = photo.thumbnailBase64;
-      $('#scan-preview-back').classList.remove('hidden');
-      $('#scan-clear-back').classList.remove('hidden');
-    }
+    // Show preview
+    const preview = document.getElementById('scan-preview-front');
+    preview.src = stagedFront.thumbnailBase64;
+    preview.classList.remove('hidden');
+    document.querySelector('#scan-slot-front .scan-btn').style.display = 'none';
 
-    updateIdentifyButton();
+    // Move to step 2
+    document.getElementById('scan-step-back').classList.remove('hidden');
   } catch (err) {
     hideLoading();
     toast('Failed to process photo: ' + err.message, 'error');
   }
 }
 
-function clearStagedPhoto(side) {
-  if (side === 'front') {
-    stagedFront = null;
-    $('#scan-preview-front').classList.add('hidden');
-    $('#scan-clear-front').classList.add('hidden');
-  } else {
-    stagedBack = null;
-    $('#scan-preview-back').classList.add('hidden');
-    $('#scan-clear-back').classList.add('hidden');
+async function handleScanBack(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  showLoading('Processing back...');
+  try {
+    stagedBack = await processPhoto(file);
+    hideLoading();
+
+    // Show preview
+    const preview = document.getElementById('scan-preview-back');
+    preview.src = stagedBack.thumbnailBase64;
+    preview.classList.remove('hidden');
+    document.querySelector('#scan-slot-back .scan-btn').style.display = 'none';
+
+    // Auto-advance to ready prompt
+    setTimeout(showReadyPrompt, 300);
+  } catch (err) {
+    hideLoading();
+    toast('Failed to process photo: ' + err.message, 'error');
   }
-  updateIdentifyButton();
 }
 
-function updateIdentifyButton() {
-  const btn = $('#btn-identify');
-  if (stagedFront) {
-    btn.classList.remove('hidden');
-    btn.textContent = stagedBack ? 'Identify Card (Front + Back)' : 'Identify Card';
-  } else {
-    btn.classList.add('hidden');
-  }
+function handleSkipBack() {
+  stagedBack = null;
+  showReadyPrompt();
 }
 
-async function handleIdentify() {
+function showReadyPrompt() {
+  document.getElementById('scan-step-front').classList.add('hidden');
+  document.getElementById('scan-step-back').classList.add('hidden');
+  document.getElementById('scan-step-ready').classList.remove('hidden');
+
+  // Update the "Identify" button label based on queue
+  const btn = document.getElementById('btn-identify-now');
+  const pending = scanQueue.filter(q => q.status === 'pending').length;
+  btn.textContent = pending > 0 ? `Identify All (${pending + 1})` : 'Identify Card';
+}
+
+function handleScanMore() {
   if (!stagedFront) return;
 
+  // Add to queue
+  scanQueue.push({
+    photo: stagedFront,
+    backPhoto: stagedBack,
+    status: 'pending',
+    card: null,
+    error: null
+  });
+
+  renderScanQueue();
+  updateIdentifyAllButton();
+
+  // Show queue section
+  document.getElementById('scan-queue-section').classList.remove('hidden');
+
+  toast(`Card queued (${scanQueue.filter(q => q.status === 'pending').length} ready)`, 'success');
+
+  // Reset wizard for next card
+  resetScanWizard();
+}
+
+async function handleIdentifyNow() {
+  if (!stagedFront) return;
+
+  // If there are queued cards, add this one and identify all
+  if (scanQueue.filter(q => q.status === 'pending').length > 0) {
+    scanQueue.push({
+      photo: stagedFront,
+      backPhoto: stagedBack,
+      status: 'pending',
+      card: null,
+      error: null
+    });
+    resetScanWizard();
+    renderScanQueue();
+    await handleIdentifyAll();
+    return;
+  }
+
+  // Single card — identify and go to review
   showLoading('Identifying card with AI...');
 
   let aiData = {};
@@ -346,7 +397,6 @@ async function handleIdentify() {
       ]
     );
     if (choice === 'update') {
-      // Keep existing card's ID and images if new ones aren't better
       currentCard.id = duplicate.id;
       currentCard.dateAdded = duplicate.dateAdded;
       if (!currentCard.imageBlob && duplicate.imageBlob) {
@@ -358,17 +408,11 @@ async function handleIdentify() {
         currentCard.imageBackThumb = duplicate.imageBackThumb;
       }
     }
-    // 'add' or null (dismissed) — proceed as new card
   }
 
-  // Reset staged photos
-  clearStagedPhoto('front');
-  clearStagedPhoto('back');
-
+  resetScanWizard();
   populateReviewForm(currentCard);
   showView('view-review');
-
-  // Auto-fetch real sold prices in the background
   autoFetchSoldPrices(currentCard);
 }
 
@@ -1302,22 +1346,21 @@ async function checkApiKeyGate() {
   }
 
   const gate = $('#api-key-gate');
-  const scanArea = document.querySelector('.scan-area');
-  const batchSection = document.getElementById('batch-queue-section');
+  const scanArea = document.getElementById('scan-wizard');
+  const queueSection = document.getElementById('scan-queue-section');
 
   if (!apiKey) {
     gate.classList.remove('hidden');
-    // Only dim the camera/AI scan area, not the entire view
     if (scanArea) scanArea.style.opacity = '0.4';
     if (scanArea) scanArea.style.pointerEvents = 'none';
-    if (batchSection) batchSection.style.opacity = '0.4';
-    if (batchSection) batchSection.style.pointerEvents = 'none';
+    if (queueSection) queueSection.style.opacity = '0.4';
+    if (queueSection) queueSection.style.pointerEvents = 'none';
   } else {
     gate.classList.add('hidden');
     if (scanArea) scanArea.style.opacity = '';
     if (scanArea) scanArea.style.pointerEvents = '';
-    if (batchSection) batchSection.style.opacity = '';
-    if (batchSection) batchSection.style.pointerEvents = '';
+    if (queueSection) queueSection.style.opacity = '';
+    if (queueSection) queueSection.style.pointerEvents = '';
   }
 
   // Only bind once
@@ -1559,118 +1602,9 @@ document.addEventListener('keydown', (e) => {
 // Expose globally so detail view can use it
 window.openImageViewer = (images, startIndex) => imageViewer.open(images, startIndex);
 
-// ===== Batch Scanning (Step-by-step wizard) =====
+// ===== Scan Queue (gallery upload + multi-card identify) =====
 
-let batchStagedFront = null;
-let batchStagedBack = null;
-
-function resetBatchWizard() {
-  batchStagedFront = null;
-  batchStagedBack = null;
-
-  // Show step 1 (front), hide step 2 and added prompt
-  document.getElementById('batch-step-front').classList.remove('hidden');
-  document.getElementById('batch-step-back').classList.add('hidden');
-  document.getElementById('batch-step-added').classList.add('hidden');
-
-  // Clear previews
-  const frontPreview = document.getElementById('batch-preview-front');
-  frontPreview.classList.add('hidden');
-  frontPreview.src = '';
-  document.querySelector('#batch-slot-front .scan-btn').style.display = '';
-
-  const backPreview = document.getElementById('batch-preview-back');
-  backPreview.classList.add('hidden');
-  backPreview.src = '';
-  document.querySelector('#batch-slot-back .scan-btn').style.display = '';
-
-  // Reset file inputs
-  document.getElementById('batch-camera-front').value = '';
-  document.getElementById('batch-camera-back').value = '';
-}
-
-async function handleBatchFront(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  e.target.value = '';
-
-  showLoading('Processing front...');
-  try {
-    batchStagedFront = await processPhoto(file);
-    hideLoading();
-
-    // Show front preview
-    const preview = document.getElementById('batch-preview-front');
-    preview.src = batchStagedFront.thumbnailBase64;
-    preview.classList.remove('hidden');
-    document.querySelector('#batch-slot-front .scan-btn').style.display = 'none';
-
-    // Move to step 2 (back)
-    document.getElementById('batch-step-back').classList.remove('hidden');
-  } catch (err) {
-    hideLoading();
-    toast('Failed to process photo: ' + err.message, 'error');
-  }
-}
-
-async function handleBatchBack(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  e.target.value = '';
-
-  showLoading('Processing back...');
-  try {
-    batchStagedBack = await processPhoto(file);
-    hideLoading();
-
-    // Show back preview
-    const preview = document.getElementById('batch-preview-back');
-    preview.src = batchStagedBack.thumbnailBase64;
-    preview.classList.remove('hidden');
-    document.querySelector('#batch-slot-back .scan-btn').style.display = 'none';
-
-    // Auto-add to batch after a brief moment
-    setTimeout(() => addToBatchQueue(), 300);
-  } catch (err) {
-    hideLoading();
-    toast('Failed to process photo: ' + err.message, 'error');
-  }
-}
-
-function handleBatchSkipBack() {
-  batchStagedBack = null;
-  addToBatchQueue();
-}
-
-function addToBatchQueue() {
-  if (!batchStagedFront) return;
-
-  batchQueue.push({
-    photo: batchStagedFront,
-    backPhoto: batchStagedBack,
-    status: 'pending',
-    card: null,
-    error: null
-  });
-
-  renderBatchQueue();
-  updateBatchIdentifyButton();
-  updateBatchDoneCount();
-
-  // Show "card added" prompt
-  document.getElementById('batch-step-front').classList.add('hidden');
-  document.getElementById('batch-step-back').classList.add('hidden');
-  document.getElementById('batch-step-added').classList.remove('hidden');
-}
-
-function updateBatchDoneCount() {
-  const countEl = document.getElementById('batch-done-count');
-  if (countEl) {
-    countEl.textContent = batchQueue.filter(q => q.status === 'pending').length;
-  }
-}
-
-async function handleBatchFileUpload(e) {
+async function handleGalleryUpload(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
   e.target.value = '';
@@ -1680,29 +1614,30 @@ async function handleBatchFileUpload(e) {
   for (const file of files) {
     try {
       const photo = await processPhoto(file);
-      batchQueue.push({ photo, backPhoto: null, status: 'pending', card: null, error: null });
-    } catch (err) {
-      batchQueue.push({ photo: null, backPhoto: null, status: 'error', card: null, error: 'Failed to process photo' });
+      scanQueue.push({ photo, backPhoto: null, status: 'pending', card: null, error: null });
+    } catch {
+      scanQueue.push({ photo: null, backPhoto: null, status: 'error', card: null, error: 'Failed to process photo' });
     }
   }
 
   hideLoading();
-  renderBatchQueue();
-  updateBatchIdentifyButton();
-  updateBatchDoneCount();
-  toast(`${files.length} photo${files.length > 1 ? 's' : ''} added to batch`, 'success');
+  document.getElementById('scan-queue-section').classList.remove('hidden');
+  renderScanQueue();
+  updateIdentifyAllButton();
+  toast(`${files.length} photo${files.length > 1 ? 's' : ''} added`, 'success');
 }
 
-function renderBatchQueue() {
-  const container = document.getElementById('batch-queue');
+function renderScanQueue() {
+  const container = document.getElementById('scan-queue');
   if (!container) return;
 
-  if (batchQueue.length === 0) {
+  if (scanQueue.length === 0) {
     container.innerHTML = '';
+    document.getElementById('scan-queue-section').classList.add('hidden');
     return;
   }
 
-  container.innerHTML = batchQueue.map((item, i) => {
+  container.innerHTML = scanQueue.map((item, i) => {
     let statusHtml = '';
     let statusClass = '';
     if (item.status === 'pending') {
@@ -1728,34 +1663,31 @@ function renderBatchQueue() {
     `;
   }).join('');
 
-  // Wire up remove buttons
   container.querySelectorAll('.batch-remove-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.index);
-      batchQueue.splice(idx, 1);
-      renderBatchQueue();
-      updateBatchIdentifyButton();
-      updateBatchDoneCount();
+      scanQueue.splice(parseInt(btn.dataset.index), 1);
+      renderScanQueue();
+      updateIdentifyAllButton();
     });
   });
 }
 
-function updateBatchIdentifyButton() {
-  const btn = document.getElementById('btn-batch-identify');
+function updateIdentifyAllButton() {
+  const btn = document.getElementById('btn-identify-all');
   if (!btn) return;
-  const pendingCount = batchQueue.filter(q => q.status === 'pending').length;
+  const pendingCount = scanQueue.filter(q => q.status === 'pending').length;
   btn.disabled = pendingCount === 0;
   btn.textContent = pendingCount > 0 ? `Identify All (${pendingCount})` : 'Identify All';
 }
 
-async function handleBatchIdentify() {
-  const pending = batchQueue.filter(q => q.status === 'pending');
+async function handleIdentifyAll() {
+  const pending = scanQueue.filter(q => q.status === 'pending');
   if (pending.length === 0) {
-    toast('No cards ready to identify. Scan some cards first.', 'info');
+    toast('No cards ready to identify.', 'info');
     return;
   }
 
-  // Check API key before starting
+  // Check API key
   let apiKey = await db.getSetting('apiKey');
   if (!apiKey) {
     try { apiKey = localStorage.getItem('cw_apiKey'); } catch {}
@@ -1765,7 +1697,7 @@ async function handleBatchIdentify() {
     return;
   }
 
-  const btn = document.getElementById('btn-batch-identify');
+  const btn = document.getElementById('btn-identify-all');
   btn.disabled = true;
   btn.textContent = `Scanning 0/${pending.length}...`;
 
@@ -1778,7 +1710,7 @@ async function handleBatchIdentify() {
 
       item.status = 'identifying';
       btn.textContent = `Scanning ${processed + 1}/${pending.length}...`;
-      renderBatchQueue();
+      renderScanQueue();
 
       try {
         const backBase64 = item.backPhoto ? item.backPhoto.fullBase64 : null;
@@ -1810,8 +1742,6 @@ async function handleBatchIdentify() {
 
         card.ebayTitle = generateEbayTitle(card);
         await db.saveCard(card);
-
-        // Auto-fetch sold prices in background
         autoFetchSoldPrices(card);
 
         item.card = card;
@@ -1822,7 +1752,7 @@ async function handleBatchIdentify() {
         item.error = err.message || 'AI identification failed';
       }
 
-      renderBatchQueue();
+      renderScanQueue();
     }
 
     if (processed > 0) {
@@ -1834,10 +1764,10 @@ async function handleBatchIdentify() {
       toast('All cards failed to identify. Check your API key and try again.', 'error');
     }
   } catch (err) {
-    toast('Batch identify failed: ' + (err.message || 'Unknown error'), 'error');
+    toast('Identify failed: ' + (err.message || 'Unknown error'), 'error');
   }
 
-  updateBatchIdentifyButton();
+  updateIdentifyAllButton();
 }
 
 function escapeHtml(str) {
