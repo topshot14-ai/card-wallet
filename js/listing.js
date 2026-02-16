@@ -95,11 +95,10 @@ export async function initListings() {
     const delBtn = e.target.closest('.listing-delete-btn');
     if (delBtn) {
       e.stopPropagation();
-      const confirmed = await confirm('Delete Card', 'Move this card to trash?');
-      if (confirmed) {
+      if (window.confirm('Are you sure you want to delete this card?')) {
         await db.softDeleteCard(delBtn.dataset.id);
         await refreshListings();
-        toast('Card moved to trash', 'success');
+        toast('Card deleted', 'success');
       }
       return;
     }
