@@ -48,6 +48,7 @@ export async function listCardOnEbay(card) {
   try {
     await executeListingFlow(card, result.format, result.price);
   } catch (err) {
+    hideLoading();
     console.error('[eBay] Listing failed:', err);
     toast('eBay listing failed: ' + err.message, 'error', 5000);
   }
@@ -77,9 +78,10 @@ function showFormatPicker(defaultPrice) {
               <span>Auction (7 days)</span>
             </label>
           </div>
+          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99 — set Buy It Now price below</p>
         </div>
         <div class="form-group">
-          <label for="ebay-price">Price ($)</label>
+          <label for="ebay-price" id="ebay-price-label">Price ($)</label>
           <input type="number" id="ebay-price" step="0.01" value="${defaultPrice}" min="0.01">
         </div>
       </div>
@@ -90,6 +92,15 @@ function showFormatPicker(defaultPrice) {
     `;
 
     overlay.classList.remove('hidden');
+
+    // Show auction note and update price label when format changes
+    document.querySelectorAll('input[name="ebay-format"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        const isAuction = document.querySelector('input[name="ebay-format"]:checked').value === 'AUCTION';
+        document.getElementById('auction-note').style.display = isAuction ? 'block' : 'none';
+        document.getElementById('ebay-price-label').textContent = isAuction ? 'Buy It Now Price ($)' : 'Price ($)';
+      });
+    });
 
     document.getElementById('ebay-cancel').addEventListener('click', () => {
       overlay.classList.add('hidden');

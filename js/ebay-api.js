@@ -342,8 +342,12 @@ export async function createOffer(sku, card, format, price, policyIds) {
   }
 
   if (format === 'AUCTION') {
+    // Immediate payment requires a Buy It Now price for auctions.
+    // Buy It Now must be >= 30% above start price ($0.99 * 1.3 = $1.29).
+    const buyItNow = Math.max(priceValue, 1.29);
     body.pricingSummary = {
-      auctionStartPrice: { value: priceValue.toFixed(2), currency: 'USD' },
+      auctionStartPrice: { value: '0.99', currency: 'USD' },
+      price: { value: buyItNow.toFixed(2), currency: 'USD' },
     };
     body.listingDuration = 'DAYS_7';
   } else {
