@@ -223,11 +223,11 @@ async function ensureMerchantLocation() {
   };
 
   const resp = await ebayFetch('/sell/inventory/v1/location/default', {
-    method: 'POST',
+    method: 'PUT',
     body: JSON.stringify(body),
   });
 
-  // 204 = created, 409 = already exists — both are fine
+  // 204/200 = created/updated, 409 = already exists — all fine
   if (resp.status === 204 || resp.status === 409 || resp.status === 200) {
     ensureMerchantLocation._done = true;
     console.log('[eBay] Merchant location ready');
@@ -285,6 +285,16 @@ export async function createOffer(sku, card, format, price, policyIds) {
     const errBody = await resp.json().catch(() => ({}));
     console.error('[eBay] Create offer error:', JSON.stringify(errBody, null, 2));
     const firstError = errBody.errors?.[0];
+
+    // If offer already exists (from a previous failed attempt), use its ID
+    if (firstError?.errorId === 25002) {
+      const existingId = firstError.parameters?.find(p => p.name === 'offerId')?.value;
+      if (existingId) {
+        console.log('[eBay] Using existing offer:', existingId);
+        return existingId;
+      }
+    }
+
     const detail = firstError?.longMessage || firstError?.message || `HTTP ${resp.status}`;
     throw new Error(detail);
   }
