@@ -72,8 +72,13 @@ export async function syncImages() {
   let uploaded = 0;
   let downloaded = 0;
   let errors = 0;
+  const errorMessages = [];
 
   console.log('[Sync] syncImages — checking', allCards.length, 'cards, storage available:', !!storage);
+
+  if (!storage) {
+    errorMessages.push('Firebase Storage not available');
+  }
 
   for (const card of allCards) {
     let cardChanged = false;
@@ -88,7 +93,9 @@ export async function syncImages() {
         cardChanged = true;
         console.log('[Sync] Front uploaded OK');
       } catch (err) {
-        console.error('[Sync] Front upload FAILED for', card.id, ':', err.message);
+        const msg = 'Upload front failed: ' + err.message;
+        console.error('[Sync]', msg);
+        errorMessages.push(msg);
         errors++;
       }
     }
@@ -102,7 +109,9 @@ export async function syncImages() {
         cardChanged = true;
         console.log('[Sync] Back uploaded OK');
       } catch (err) {
-        console.error('[Sync] Back upload FAILED for', card.id, ':', err.message);
+        const msg = 'Upload back failed: ' + err.message;
+        console.error('[Sync]', msg);
+        errorMessages.push(msg);
         errors++;
       }
     }
@@ -136,7 +145,9 @@ export async function syncImages() {
           console.log('[Sync] Front downloaded OK');
         }
       } catch (err) {
-        console.error('[Sync] Front download FAILED for', card.id, ':', err.message);
+        const msg = 'Download front failed: ' + err.message;
+        console.error('[Sync]', msg);
+        errorMessages.push(msg);
         errors++;
       }
     }
@@ -149,11 +160,13 @@ export async function syncImages() {
           const blob = await resp.blob();
           card.imageBackBlob = await blobToBase64(blob);
           await saveCardLocal(card);
-          if (!card.imageStorageUrl || card.imageBlob) downloaded++; // Don't double count
+          if (!card.imageStorageUrl || card.imageBlob) downloaded++;
           console.log('[Sync] Back downloaded OK');
         }
       } catch (err) {
-        console.error('[Sync] Back download FAILED for', card.id, ':', err.message);
+        const msg = 'Download back failed: ' + err.message;
+        console.error('[Sync]', msg);
+        errorMessages.push(msg);
         errors++;
       }
     }
@@ -166,7 +179,7 @@ export async function syncImages() {
     window.dispatchEvent(new CustomEvent('refresh-collection'));
   }
 
-  return { uploaded, downloaded, errors };
+  return { uploaded, downloaded, errors, errorMessages };
 }
 
 // ===== Delete images from Storage =====

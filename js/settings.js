@@ -194,8 +194,12 @@ export async function initSettings() {
       const parts = ['Sync complete'];
       if (imgResult.uploaded > 0) parts.push(`${imgResult.uploaded} image(s) uploaded`);
       if (imgResult.downloaded > 0) parts.push(`${imgResult.downloaded} image(s) downloaded`);
-      if (imgResult.errors > 0) parts.push(`${imgResult.errors} error(s)`);
-      toast(parts.join('. '), imgResult.errors > 0 ? 'warning' : 'success', 4000);
+      if (imgResult.errors > 0) {
+        // Show first error message so user can see what went wrong
+        const firstErr = imgResult.errorMessages?.[0] || 'unknown error';
+        parts.push(`${imgResult.errors} error(s): ${firstErr}`);
+      }
+      toast(parts.join('. '), imgResult.errors > 0 ? 'warning' : 'success', 6000);
     } catch (err) {
       toast('Sync failed: ' + err.message, 'error');
     }
