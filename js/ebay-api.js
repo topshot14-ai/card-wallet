@@ -121,14 +121,16 @@ export async function getBusinessPolicies() {
  * @param {string[]} imageUrls - eBay-hosted image URLs
  */
 export async function createInventoryItem(sku, card, imageUrls) {
-  const aspects = {};
-  if (card.sport) aspects['Sport'] = [card.sport];
-  if (card.player) aspects['Player/Athlete'] = [card.player];
+  // Required aspects for category 261328 — always include with fallback defaults
+  const aspects = {
+    'Sport': [card.sport || 'Baseball'],
+    'Player/Athlete': [card.player || 'N/A'],
+    'Manufacturer': [card.brand || 'Unknown'],
+    'Set': [card.setName || 'Unknown'],
+    'Season': [card.year || new Date().getFullYear().toString()],
+    'Card Number': [card.cardNumber || '1'],
+  };
   if (card.team) aspects['Team'] = [card.team];
-  if (card.brand) aspects['Manufacturer'] = [card.brand];
-  if (card.setName) aspects['Set'] = [card.setName];
-  if (card.year) aspects['Season'] = [card.year];
-  if (card.cardNumber) aspects['Card Number'] = [card.cardNumber];
   if (card.parallel) aspects['Parallel/Variety'] = [card.parallel];
 
   const features = [];
@@ -214,6 +216,21 @@ export async function createInventoryItem(sku, card, imageUrls) {
     condition: conditionEnum,
     conditionDescription: card.condition || '',
     conditionDescriptors,
+    // Package weight & size — required for shipping calculations (error 25020 without it)
+    // Defaults: trading card in bubble mailer, ~3 oz, 10x7x1 inch
+    packageWeightAndSize: {
+      packageType: 'LETTER',
+      weight: {
+        value: 3.0,
+        unit: 'OUNCE',
+      },
+      dimensions: {
+        length: 10.0,
+        width: 7.0,
+        height: 1.0,
+        unit: 'INCH',
+      },
+    },
     product: {
       title,
       description: descParts.join(' | '),
@@ -352,9 +369,11 @@ export async function createOffer(sku, card, format, price, policyIds) {
     },
   };
 
-  if (locationKey) {
-    body.merchantLocationKey = locationKey;
+  // Merchant location is required — fail fast if missing
+  if (!locationKey) {
+    throw new Error('No shipping location configured. Set your zip code when prompted.');
   }
+  body.merchantLocationKey = locationKey;
 
   if (format === 'AUCTION') {
     // Immediate payment requires a Buy It Now price for auctions.
@@ -369,6 +388,7 @@ export async function createOffer(sku, card, format, price, policyIds) {
     body.pricingSummary = {
       price: { value: priceValue.toFixed(2), currency: 'USD' },
     };
+    body.listingDuration = 'GTC';
   }
 
   console.log('[eBay] createOffer body:', JSON.stringify(body, null, 2));
