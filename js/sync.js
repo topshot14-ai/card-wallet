@@ -26,95 +26,11 @@ function cardToFirestoreDoc(card) {
       doc[key] = value === undefined ? null : value;
     }
   }
-  // Store thumbnails in Firestore (small enough at ~5-15KB base64)
-  // Full images (imageBlob, imageBackBlob) go to Firebase Storage
   return doc;
 }
 
 function firestoreDocToCard(doc) {
   return { ...doc };
-}
-
-// ===== Image Storage Helpers =====
-
-/**
- * Upload a card's full images to Firebase Storage.
- * Stores at users/{uid}/cards/{cardId}/front.jpg and back.jpg.
- * Returns { imageStorageUrl, imageBackStorageUrl } with download URLs.
- */
-async function uploadCardImages(uid, card) {
-  const storage = getStorage();
-  if (!storage) {
-    console.warn('[Sync] uploadCardImages — no storage available');
-    return {};
-  }
-
-  const urls = {};
-  console.log('[Sync] uploadCardImages —', card.id,
-    'hasBlob:', !!card.imageBlob, 'hasUrl:', !!card.imageStorageUrl,
-    'hasBackBlob:', !!card.imageBackBlob, 'hasBackUrl:', !!card.imageBackStorageUrl);
-
-  // Upload front image if it exists and hasn't been uploaded yet
-  if (card.imageBlob && !card.imageStorageUrl) {
-    try {
-      console.log('[Sync] Uploading front image for', card.id, '...');
-      const ref = storage.ref(`users/${uid}/cards/${card.id}/front.jpg`);
-      await ref.putString(card.imageBlob, 'data_url');
-      urls.imageStorageUrl = await ref.getDownloadURL();
-      console.log('[Sync] Front image uploaded:', urls.imageStorageUrl.substring(0, 60) + '...');
-    } catch (err) {
-      console.error('[Sync] Failed to upload front image:', err);
-    }
-  }
-
-  // Upload back image if it exists and hasn't been uploaded yet
-  if (card.imageBackBlob && !card.imageBackStorageUrl) {
-    try {
-      console.log('[Sync] Uploading back image for', card.id, '...');
-      const ref = storage.ref(`users/${uid}/cards/${card.id}/back.jpg`);
-      await ref.putString(card.imageBackBlob, 'data_url');
-      urls.imageBackStorageUrl = await ref.getDownloadURL();
-      console.log('[Sync] Back image uploaded:', urls.imageBackStorageUrl.substring(0, 60) + '...');
-    } catch (err) {
-      console.error('[Sync] Failed to upload back image:', err);
-    }
-  }
-
-  return urls;
-}
-
-/**
- * Download card images from Firebase Storage URLs into base64 data URIs.
- * Returns { imageBlob, imageBackBlob } for fields that were downloaded.
- */
-async function downloadCardImages(card) {
-  const images = {};
-
-  if (card.imageStorageUrl && !card.imageBlob) {
-    try {
-      const resp = await fetch(card.imageStorageUrl);
-      if (resp.ok) {
-        const blob = await resp.blob();
-        images.imageBlob = await blobToBase64(blob);
-      }
-    } catch (err) {
-      console.error('Failed to download front image:', err);
-    }
-  }
-
-  if (card.imageBackStorageUrl && !card.imageBackBlob) {
-    try {
-      const resp = await fetch(card.imageBackStorageUrl);
-      if (resp.ok) {
-        const blob = await resp.blob();
-        images.imageBackBlob = await blobToBase64(blob);
-      }
-    } catch (err) {
-      console.error('Failed to download back image:', err);
-    }
-  }
-
-  return images;
 }
 
 function blobToBase64(blob) {
@@ -126,11 +42,137 @@ function blobToBase64(blob) {
   });
 }
 
+// Safe wrapper — returns null instead of throwing if Storage SDK missing
+function safeGetStorage() {
+  try {
+    return getStorage();
+  } catch (err) {
+    console.error('[Sync] Firebase Storage unavailable:', err.message);
+    return null;
+  }
+}
+
+// ===== Image Sync: explicit upload/download for ALL cards =====
+
 /**
- * Delete card images from Firebase Storage.
+ * Sync all card images between local IndexedDB and Firebase Storage.
+ * - Upload: local has imageBlob but no imageStorageUrl → upload to Storage
+ * - Download: local has imageStorageUrl but no imageBlob → download from Storage
+ * Returns { uploaded, downloaded } counts.
  */
+export async function syncImages() {
+  if (!isFirebaseConfigured()) return { uploaded: 0, downloaded: 0 };
+  const user = getCurrentUser();
+  if (!user) return { uploaded: 0, downloaded: 0 };
+
+  const storage = safeGetStorage();
+  const firestore = getFirestore();
+
+  const allCards = await getAllCards();
+  let uploaded = 0;
+  let downloaded = 0;
+  let errors = 0;
+
+  console.log('[Sync] syncImages — checking', allCards.length, 'cards, storage available:', !!storage);
+
+  for (const card of allCards) {
+    let cardChanged = false;
+
+    // === UPLOAD: local image exists but not in Storage ===
+    if (storage && card.imageBlob && !card.imageStorageUrl) {
+      try {
+        console.log('[Sync] Uploading front image for', card.id);
+        const ref = storage.ref(`users/${user.uid}/cards/${card.id}/front.jpg`);
+        await ref.putString(card.imageBlob, 'data_url');
+        card.imageStorageUrl = await ref.getDownloadURL();
+        cardChanged = true;
+        console.log('[Sync] Front uploaded OK');
+      } catch (err) {
+        console.error('[Sync] Front upload FAILED for', card.id, ':', err.message);
+        errors++;
+      }
+    }
+
+    if (storage && card.imageBackBlob && !card.imageBackStorageUrl) {
+      try {
+        console.log('[Sync] Uploading back image for', card.id);
+        const ref = storage.ref(`users/${user.uid}/cards/${card.id}/back.jpg`);
+        await ref.putString(card.imageBackBlob, 'data_url');
+        card.imageBackStorageUrl = await ref.getDownloadURL();
+        cardChanged = true;
+        console.log('[Sync] Back uploaded OK');
+      } catch (err) {
+        console.error('[Sync] Back upload FAILED for', card.id, ':', err.message);
+        errors++;
+      }
+    }
+
+    // Save locally + update Firestore doc with new URLs
+    if (cardChanged) {
+      await saveCardLocal(card);
+      if (firestore) {
+        try {
+          const update = {};
+          if (card.imageStorageUrl) update.imageStorageUrl = card.imageStorageUrl;
+          if (card.imageBackStorageUrl) update.imageBackStorageUrl = card.imageBackStorageUrl;
+          await firestore.collection('users').doc(user.uid).collection('cards').doc(card.id).set(update, { merge: true });
+        } catch (err) {
+          console.error('[Sync] Failed to update Firestore with image URLs:', err.message);
+        }
+      }
+      uploaded++;
+    }
+
+    // === DOWNLOAD: Storage URL exists but no local blob ===
+    if (card.imageStorageUrl && !card.imageBlob) {
+      try {
+        console.log('[Sync] Downloading front image for', card.id);
+        const resp = await fetch(card.imageStorageUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          card.imageBlob = await blobToBase64(blob);
+          await saveCardLocal(card);
+          downloaded++;
+          console.log('[Sync] Front downloaded OK');
+        }
+      } catch (err) {
+        console.error('[Sync] Front download FAILED for', card.id, ':', err.message);
+        errors++;
+      }
+    }
+
+    if (card.imageBackStorageUrl && !card.imageBackBlob) {
+      try {
+        console.log('[Sync] Downloading back image for', card.id);
+        const resp = await fetch(card.imageBackStorageUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          card.imageBackBlob = await blobToBase64(blob);
+          await saveCardLocal(card);
+          if (!card.imageStorageUrl || card.imageBlob) downloaded++; // Don't double count
+          console.log('[Sync] Back downloaded OK');
+        }
+      } catch (err) {
+        console.error('[Sync] Back download FAILED for', card.id, ':', err.message);
+        errors++;
+      }
+    }
+  }
+
+  console.log('[Sync] syncImages done — uploaded:', uploaded, 'downloaded:', downloaded, 'errors:', errors);
+
+  if (uploaded > 0 || downloaded > 0) {
+    window.dispatchEvent(new CustomEvent('refresh-listings'));
+    window.dispatchEvent(new CustomEvent('refresh-collection'));
+  }
+
+  return { uploaded, downloaded, errors };
+}
+
+// ===== Delete images from Storage =====
+
 async function deleteCardImages(uid, cardId) {
-  const storage = getStorage();
+  const storage = safeGetStorage();
   if (!storage) return;
 
   const paths = [
@@ -160,17 +202,29 @@ export async function pushCard(card) {
   try {
     setSyncStatus('syncing');
 
-    // Upload images to Firebase Storage if needed
-    const imageUrls = await uploadCardImages(user.uid, card);
-
-    // If new URLs were generated, save them on the card locally and include in Firestore doc
-    if (imageUrls.imageStorageUrl) {
-      card.imageStorageUrl = imageUrls.imageStorageUrl;
-      await saveCardLocal(card);
-    }
-    if (imageUrls.imageBackStorageUrl) {
-      card.imageBackStorageUrl = imageUrls.imageBackStorageUrl;
-      await saveCardLocal(card);
+    // Try to upload images to Firebase Storage
+    const storage = safeGetStorage();
+    if (storage) {
+      if (card.imageBlob && !card.imageStorageUrl) {
+        try {
+          const ref = storage.ref(`users/${user.uid}/cards/${card.id}/front.jpg`);
+          await ref.putString(card.imageBlob, 'data_url');
+          card.imageStorageUrl = await ref.getDownloadURL();
+          await saveCardLocal(card);
+        } catch (err) {
+          console.error('[Sync] pushCard image upload failed:', err.message);
+        }
+      }
+      if (card.imageBackBlob && !card.imageBackStorageUrl) {
+        try {
+          const ref = storage.ref(`users/${user.uid}/cards/${card.id}/back.jpg`);
+          await ref.putString(card.imageBackBlob, 'data_url');
+          card.imageBackStorageUrl = await ref.getDownloadURL();
+          await saveCardLocal(card);
+        } catch (err) {
+          console.error('[Sync] pushCard back image upload failed:', err.message);
+        }
+      }
     }
 
     const doc = cardToFirestoreDoc(card);
@@ -187,12 +241,12 @@ export async function pushCard(card) {
 
 export async function pullAllCards() {
   console.log('[Sync] pullAllCards — called');
-  if (!isFirebaseConfigured()) { console.log('[Sync] pullAllCards — firebase not configured, returning'); return; }
+  if (!isFirebaseConfigured()) { console.log('[Sync] pullAllCards — firebase not configured'); return; }
   const user = getCurrentUser();
-  if (!user) { console.log('[Sync] pullAllCards — no user, returning'); return; }
+  if (!user) { console.log('[Sync] pullAllCards — no user'); return; }
 
   const firestore = getFirestore();
-  if (!firestore) { console.log('[Sync] pullAllCards — no firestore, returning'); return; }
+  if (!firestore) { console.log('[Sync] pullAllCards — no firestore'); return; }
 
   try {
     setSyncStatus('syncing');
@@ -207,7 +261,6 @@ export async function pullAllCards() {
 
     let pullCount = 0;
     let conflictCount = 0;
-    const imagesToDownload = [];
 
     for (const doc of snapshot.docs) {
       const remoteCard = firestoreDocToCard(doc.data());
@@ -217,99 +270,47 @@ export async function pullAllCards() {
         // Card exists remotely but not locally — pull it
         await saveCardLocal(remoteCard);
         pullCount++;
-
-        // Queue image download if URLs exist
-        if (remoteCard.imageStorageUrl || remoteCard.imageBackStorageUrl) {
-          imagesToDownload.push(remoteCard);
-        }
       } else {
         // Both exist — newer wins
         const remoteTime = new Date(remoteCard.lastModified || remoteCard.dateAdded || 0).getTime();
         const localTime = new Date(localCard.lastModified || localCard.dateAdded || 0).getTime();
 
         if (remoteTime > localTime) {
-          // Remote is newer — merge but keep local full images
           const merged = { ...localCard, ...remoteCard };
-          // Preserve local full images (they aren't in Firestore)
           if (localCard.imageBlob) merged.imageBlob = localCard.imageBlob;
           if (localCard.imageBackBlob) merged.imageBackBlob = localCard.imageBackBlob;
           await saveCardLocal(merged);
           conflictCount++;
-        }
-
-        // Download images if remote has URLs but local has no blobs
-        if ((remoteCard.imageStorageUrl && !localCard.imageBlob) ||
-            (remoteCard.imageBackStorageUrl && !localCard.imageBackBlob)) {
-          const cardToFetch = { ...localCard, ...remoteCard };
-          // Keep existing local blobs so downloadCardImages only fetches missing ones
-          if (localCard.imageBlob) cardToFetch.imageBlob = localCard.imageBlob;
-          if (localCard.imageBackBlob) cardToFetch.imageBackBlob = localCard.imageBackBlob;
-          imagesToDownload.push(cardToFetch);
+        } else {
+          // Local is newer or same — preserve local but grab any Storage URLs from remote
+          if (remoteCard.imageStorageUrl && !localCard.imageStorageUrl) {
+            localCard.imageStorageUrl = remoteCard.imageStorageUrl;
+            await saveCardLocal(localCard);
+          }
+          if (remoteCard.imageBackStorageUrl && !localCard.imageBackStorageUrl) {
+            localCard.imageBackStorageUrl = remoteCard.imageBackStorageUrl;
+            await saveCardLocal(localCard);
+          }
         }
       }
     }
 
-    // Notify about sync results
-    if (conflictCount > 0) {
-      window.dispatchEvent(new CustomEvent('sync-conflict', {
-        detail: { message: `${conflictCount} card(s) updated from cloud (remote was newer)` }
-      }));
-    }
-
-    // Push local-only cards to remote (and upload any missing images)
+    // Push local-only cards to remote
     for (const [id, localCard] of localMap) {
       const existsRemote = snapshot.docs.some(d => d.id === id);
       if (!existsRemote) {
-        await pushCard(localCard);
-      } else if (localCard.imageBlob && !localCard.imageStorageUrl) {
-        // Card exists remote but images were never uploaded — upload now
-        console.log('[Sync] Card', id, 'exists remote but has no imageStorageUrl — uploading images');
         await pushCard(localCard);
       }
     }
 
     setSyncStatus('idle');
     updateSyncBadge('Synced');
+    console.log('[Sync] pullAllCards done — pulled:', pullCount, 'conflicts:', conflictCount);
 
-    // Download images in background (non-blocking)
-    console.log('[Sync] pullAllCards done — pulled:', pullCount, 'conflicts:', conflictCount, 'imagesToDownload:', imagesToDownload.length);
-    if (imagesToDownload.length > 0) {
-      downloadImagesInBackground(imagesToDownload);
-    }
   } catch (err) {
     console.error('Pull all cards failed:', err);
     setSyncStatus('error');
     updateSyncBadge('Sync Error');
-  }
-}
-
-/**
- * Download images for multiple cards in background.
- * Updates IndexedDB and refreshes views when done.
- */
-async function downloadImagesInBackground(cards) {
-  console.log('[Sync] Downloading images for', cards.length, 'card(s)...');
-  let downloadedCount = 0;
-
-  for (const card of cards) {
-    console.log('[Sync] Downloading images for card', card.id,
-      'frontUrl:', !!card.imageStorageUrl, 'backUrl:', !!card.imageBackStorageUrl);
-    const images = await downloadCardImages(card);
-
-    if (Object.keys(images).length > 0) {
-      // Merge downloaded images into the card and save locally
-      Object.assign(card, images);
-      await saveCardLocal(card);
-      downloadedCount++;
-      console.log('[Sync] Downloaded', Object.keys(images).length, 'image(s) for card', card.id);
-    }
-  }
-
-  console.log('[Sync] Image download complete —', downloadedCount, 'of', cards.length, 'cards updated');
-  if (downloadedCount > 0) {
-    // Refresh views so images appear
-    window.dispatchEvent(new CustomEvent('refresh-listings'));
-    window.dispatchEvent(new CustomEvent('refresh-collection'));
   }
 }
 
@@ -324,10 +325,7 @@ export async function deleteCardRemote(cardId) {
   if (!firestore) return;
 
   try {
-    // Delete images from Storage
     await deleteCardImages(user.uid, cardId);
-
-    // Delete doc from Firestore
     await firestore.collection('users').doc(user.uid).collection('cards').doc(cardId).delete();
   } catch (err) {
     console.error('Delete card remote failed:', err);
@@ -336,7 +334,6 @@ export async function deleteCardRemote(cardId) {
 
 // ===== Settings Sync =====
 
-// Keys to sync to Firestore (excludes sensitive tokens like eBay auth)
 const SYNCED_SETTING_KEYS = [
   'apiKey', 'model', 'defaultSport', 'defaultCondition', 'defaultPrice',
   'ebayWorkerUrl', 'ebayClientId', 'ebayRuName',
@@ -422,7 +419,6 @@ export function initSyncListeners() {
     }
   });
 
-  // Push settings to cloud when API key or other settings change
   window.addEventListener('apikey-changed', () => pushSettings());
   window.addEventListener('settings-changed', () => pushSettings());
 
@@ -435,7 +431,6 @@ export function initSyncListeners() {
     }
   });
 
-  // Update sync badge on status changes
   window.addEventListener('sync-status-changed', (e) => {
     const { status } = e.detail;
     const badge = document.getElementById('auth-sync-badge');

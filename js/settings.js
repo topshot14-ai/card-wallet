@@ -3,7 +3,7 @@
 import * as db from './db.js';
 import { toast, confirm, $ } from './ui.js';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut } from './auth.js';
-import { pullAllCards, pullSettings, pushSettings } from './sync.js';
+import { pullAllCards, pullSettings, pushSettings, syncImages } from './sync.js';
 
 export async function initSettings() {
   // Load saved settings
@@ -176,14 +176,26 @@ export async function initSettings() {
 
   $('#btn-sync-now').addEventListener('click', async () => {
     try {
-      toast('Syncing...', 'info');
+      toast('Syncing settings...', 'info');
       await pushSettings();
       await pullSettings();
-      await pullAllCards();
       await loadSettings();
-      toast('Sync complete', 'success');
+
+      toast('Syncing cards...', 'info');
+      await pullAllCards();
+
+      toast('Syncing images...', 'info');
+      const imgResult = await syncImages();
+
       await refreshStats();
       window.dispatchEvent(new CustomEvent('data-imported'));
+
+      // Show detailed result
+      const parts = ['Sync complete'];
+      if (imgResult.uploaded > 0) parts.push(`${imgResult.uploaded} image(s) uploaded`);
+      if (imgResult.downloaded > 0) parts.push(`${imgResult.downloaded} image(s) downloaded`);
+      if (imgResult.errors > 0) parts.push(`${imgResult.errors} error(s)`);
+      toast(parts.join('. '), imgResult.errors > 0 ? 'warning' : 'success', 4000);
     } catch (err) {
       toast('Sync failed: ' + err.message, 'error');
     }
