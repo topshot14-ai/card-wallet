@@ -314,12 +314,22 @@ export async function createOffer(sku, card, format, price, policyIds) {
     console.error('[eBay] Create offer error:', JSON.stringify(errBody, null, 2));
     const firstError = errBody.errors?.[0];
 
-    // If offer already exists (from a previous failed attempt), use its ID
+    // If offer already exists (from a previous failed attempt), delete it and retry
     if (firstError?.errorId === 25002) {
       const existingId = firstError.parameters?.find(p => p.name === 'offerId')?.value;
       if (existingId) {
-        console.log('[eBay] Using existing offer:', existingId);
-        return existingId;
+        console.log('[eBay] Deleting stale offer:', existingId);
+        await ebayFetch(`/sell/inventory/v1/offer/${existingId}`, { method: 'DELETE' });
+        // Retry creating a fresh offer
+        const retryResp = await ebayFetch('/sell/inventory/v1/offer', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        if (retryResp.ok) {
+          const retryData = await retryResp.json();
+          console.log('[eBay] Fresh offer created:', retryData.offerId);
+          return retryData.offerId;
+        }
       }
     }
 
