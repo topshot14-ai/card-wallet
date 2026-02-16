@@ -144,16 +144,9 @@ export async function createInventoryItem(sku, card, imageUrls) {
     aspects['Graded'] = ['No'];
   }
 
-  // eBay Sell Inventory API requires ConditionEnum strings, not numeric IDs
-  const conditionEnumMap = {
-    'Near Mint or Better': 'LIKE_NEW',
-    'Excellent': 'USED_EXCELLENT',
-    'Very Good': 'USED_VERY_GOOD',
-    'Good': 'USED_GOOD',
-    'Fair': 'USED_ACCEPTABLE',
-    'Poor': 'USED_ACCEPTABLE',
-  };
-  const conditionEnum = card.graded === 'Yes' ? 'LIKE_NEW' : (conditionEnumMap[card.condition] || 'LIKE_NEW');
+  // Use LIKE_NEW for all trading cards — it's the standard condition for this category.
+  // Detailed condition goes in conditionDescription which buyers can see.
+  const conditionEnum = 'LIKE_NEW';
 
   // Build description
   const descParts = [`${card.year || ''} ${card.brand || ''} ${card.setName || ''}`.trim()];
@@ -187,10 +180,19 @@ export async function createInventoryItem(sku, card, imageUrls) {
 
   console.log('[eBay] createInventoryItem body:', JSON.stringify(body, null, 2));
 
-  const resp = await ebayFetch(`/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
+  // Retry once on 500 (eBay transient errors)
+  let resp;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    resp = await ebayFetch(`/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    if (resp.status !== 500) break;
+    if (attempt === 0) {
+      console.log('[eBay] Got 500, retrying in 2s...');
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
 
   // PUT returns 204 on success (create or update)
   if (resp.status !== 204 && resp.status !== 200) {
