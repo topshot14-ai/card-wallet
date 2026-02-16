@@ -139,10 +139,11 @@ export async function createInventoryItem(sku, card, imageUrls) {
   if (card.graded === 'Yes') {
     aspects['Graded'] = ['Yes'];
     aspects['Professional Grader'] = [card.gradeCompany || 'PSA'];
-    if (card.gradeValue) aspects['Grade'] = [card.gradeValue];
+    aspects['Grade'] = [card.gradeValue || '10'];
   } else {
     aspects['Graded'] = ['No'];
     aspects['Professional Grader'] = ['Not Professionally Graded'];
+    aspects['Grade'] = ['Not Graded'];
   }
 
   // Use LIKE_NEW for all trading cards — it's the standard condition for this category.
