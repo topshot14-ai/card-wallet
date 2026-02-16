@@ -47,6 +47,7 @@ export async function listCardOnEbay(card) {
   try {
     await executeListingFlow(card, result.format, result.price);
   } catch (err) {
+    console.error('[eBay] Listing failed:', err);
     toast('eBay listing failed: ' + err.message, 'error', 5000);
   }
 }
@@ -210,14 +211,17 @@ async function executeListingFlow(card, format, price) {
   showLoading('Uploading images...');
 
   // Step 1: Upload images
+  console.log('[eBay] Step 1: Uploading images...');
   const imageUrls = [];
   if (card.imageBlob) {
     const frontUrl = await uploadImage(card.imageBlob);
     if (frontUrl) imageUrls.push(frontUrl);
+    console.log('[eBay] Front image uploaded:', frontUrl);
   }
   if (card.imageBackBlob) {
     const backUrl = await uploadImage(card.imageBackBlob);
     if (backUrl) imageUrls.push(backUrl);
+    console.log('[eBay] Back image uploaded:', backUrl);
   }
 
   if (imageUrls.length === 0) {
@@ -226,26 +230,34 @@ async function executeListingFlow(card, format, price) {
   }
 
   // Step 2: Fetch business policies
+  console.log('[eBay] Step 2: Fetching business policies...');
   showLoading('Checking business policies...');
   const policies = await getBusinessPolicies();
+  console.log('[eBay] Policies:', JSON.stringify(policies));
 
   // Step 3: Create inventory item
+  console.log('[eBay] Step 3: Creating inventory item, SKU:', sku);
   showLoading('Creating inventory item...');
   await createInventoryItem(sku, card, imageUrls);
+  console.log('[eBay] Inventory item created');
 
   // Step 4: Create offer
+  console.log('[eBay] Step 4: Creating offer, format:', format, 'price:', price);
   showLoading('Creating offer...');
   let offerId;
   try {
     offerId = await createOffer(sku, card, format, price, policies);
+    console.log('[eBay] Offer created:', offerId);
   } catch (err) {
     await deleteInventoryItem(sku);
     throw err;
   }
 
   // Step 5: Publish offer
+  console.log('[eBay] Step 5: Publishing offer:', offerId);
   showLoading('Publishing listing...');
   const listingId = await publishOffer(offerId);
+  console.log('[eBay] Published! Listing ID:', listingId);
 
   // Step 6: Update card with listing info
   card.status = 'listed';

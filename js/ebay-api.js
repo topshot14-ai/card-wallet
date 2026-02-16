@@ -23,16 +23,20 @@ async function ebayFetch(path, options = {}) {
     ...options.headers,
   };
 
+  console.log('[eBay] Request:', options.method || 'GET', url);
   let resp = await fetch(url, { ...options, headers });
+  console.log('[eBay] Response:', resp.status, resp.statusText);
 
   // Retry once on 401 (token may have expired between check and use)
   if (resp.status === 401) {
+    console.log('[eBay] 401 — refreshing token and retrying...');
     // Force refresh by clearing expiry
     await setSetting('ebayTokenExpiry', 0);
     token = await getEbayAccessToken();
     if (!token) throw new Error('Please reconnect eBay in Settings.');
     headers['Authorization'] = `Bearer ${token}`;
     resp = await fetch(url, { ...options, headers });
+    console.log('[eBay] Retry response:', resp.status, resp.statusText);
   }
 
   return resp;
