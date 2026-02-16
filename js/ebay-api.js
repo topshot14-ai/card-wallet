@@ -351,9 +351,9 @@ export async function createOffer(sku, card, format, price, policyIds) {
   // Ensure merchant location exists (eBay requires Item.Country)
   const locationKey = await ensureMerchantLocation();
 
-  // Ensure price is properly formatted
-  const priceValue = parseFloat(price);
-  if (isNaN(priceValue) || priceValue <= 0) {
+  // Ensure price is properly formatted (auctions allow 0 = no Buy It Now)
+  const priceValue = parseFloat(price) || 0;
+  if (format !== 'AUCTION' && priceValue <= 0) {
     throw new Error(`Invalid listing price: ${price}`);
   }
 
