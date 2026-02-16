@@ -205,38 +205,55 @@ export async function createInventoryItem(sku, card, imageUrls) {
 }
 
 /**
- * Ensure a default merchant location exists (required for offers).
- * Creates one if it doesn't exist; silently succeeds if already created.
+ * Ensure a merchant location exists and return its key.
+ * First checks for existing locations, then creates one if needed.
  */
 async function ensureMerchantLocation() {
-  // Check if we already created it this session
-  if (ensureMerchantLocation._done) return;
+  if (ensureMerchantLocation._key) return ensureMerchantLocation._key;
 
+  // Step 1: Check for existing locations
+  try {
+    const resp = await ebayFetch('/sell/inventory/v1/location?limit=5');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.locations && data.locations.length > 0) {
+        const key = data.locations[0].merchantLocationKey;
+        console.log('[eBay] Found existing location:', key);
+        ensureMerchantLocation._key = key;
+        return key;
+      }
+    }
+  } catch (e) {
+    console.warn('[eBay] Could not fetch locations:', e.message);
+  }
+
+  // Step 2: No existing locations — create one
   const body = {
     location: {
       address: {
         country: 'US',
       },
     },
+    locationTypes: ['WAREHOUSE'],
     merchantLocationStatus: 'ENABLED',
     name: 'Default',
   };
 
-  const resp = await ebayFetch('/sell/inventory/v1/location/default', {
-    method: 'PUT',
+  const createResp = await ebayFetch('/sell/inventory/v1/location/default', {
+    method: 'POST',
     body: JSON.stringify(body),
   });
 
-  // 204/200 = created/updated, 409 = already exists — all fine
-  if (resp.status === 204 || resp.status === 409 || resp.status === 200) {
-    ensureMerchantLocation._done = true;
-    console.log('[eBay] Merchant location ready');
-  } else {
-    const errBody = await resp.json().catch(() => ({}));
-    console.warn('[eBay] Location creation response:', resp.status, JSON.stringify(errBody));
-    // Don't throw — the offer might still work if location was set up in Seller Hub
-    ensureMerchantLocation._done = true;
+  if (createResp.status === 204 || createResp.status === 200 || createResp.status === 409) {
+    console.log('[eBay] Location created: default');
+    ensureMerchantLocation._key = 'default';
+    return 'default';
   }
+
+  const errBody = await createResp.json().catch(() => ({}));
+  console.warn('[eBay] Location creation failed:', createResp.status, JSON.stringify(errBody));
+  // Throw so the user knows — this is required for listing
+  throw new Error('Could not set up eBay shipping location. Please add a location in eBay Seller Hub > Business Policies.');
 }
 
 /**
@@ -250,14 +267,14 @@ async function ensureMerchantLocation() {
  */
 export async function createOffer(sku, card, format, price, policyIds) {
   // Ensure merchant location exists (eBay requires Item.Country)
-  await ensureMerchantLocation();
+  const locationKey = await ensureMerchantLocation();
 
   const body = {
     sku,
     marketplaceId: 'EBAY_US',
     format,
     categoryId: '261328', // Sports Trading Card Singles
-    merchantLocationKey: 'default',
+    merchantLocationKey: locationKey,
     listingPolicies: {
       fulfillmentPolicyId: policyIds.fulfillmentPolicyId,
       returnPolicyId: policyIds.returnPolicyId,
