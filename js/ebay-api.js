@@ -255,29 +255,45 @@ export async function createInventoryItem(sku, card, imageUrls) {
 async function ensureMerchantLocation() {
   if (ensureMerchantLocation._key) return ensureMerchantLocation._key;
 
-  // Step 1: Check for existing locations
+  // Step 1: Check for existing locations with valid addresses
   try {
     const resp = await ebayFetch('/sell/inventory/v1/location?limit=5');
     if (resp.ok) {
       const data = await resp.json();
       console.log('[eBay] GET locations response:', JSON.stringify(data));
-      if (data.locations && data.locations.length > 0) {
-        const key = data.locations[0].merchantLocationKey;
-        console.log('[eBay] Found existing location:', key);
-        ensureMerchantLocation._key = key;
-        return key;
+      // Find a location with a real postal code (not our old "00000" placeholder)
+      for (const loc of (data.locations || [])) {
+        const postal = loc.location?.address?.postalCode;
+        if (postal && postal !== '00000') {
+          console.log('[eBay] Found valid location:', loc.merchantLocationKey, 'zip:', postal);
+          ensureMerchantLocation._key = loc.merchantLocationKey;
+          return loc.merchantLocationKey;
+        }
+      }
+      // Clean up any invalid "00000" locations
+      for (const loc of (data.locations || [])) {
+        if (loc.location?.address?.postalCode === '00000') {
+          console.log('[eBay] Deleting invalid location:', loc.merchantLocationKey);
+          try { await ebayFetch(`/sell/inventory/v1/location/${loc.merchantLocationKey}`, { method: 'DELETE' }); } catch {}
+        }
       }
     }
   } catch (e) {
     console.warn('[eBay] Could not fetch locations:', e.message);
   }
 
-  // Step 2: No existing locations — try creating one
-  // eBay may require postalCode and other address fields
+  // Step 2: Create location using seller's saved zip code
+  const postalCode = await getSetting('sellerZipCode');
+  if (!postalCode) {
+    console.warn('[eBay] No zip code saved — cannot create merchant location');
+    ensureMerchantLocation._key = '';
+    return '';
+  }
+
   const body = {
     location: {
       address: {
-        postalCode: '00000',
+        postalCode: postalCode,
         country: 'US',
       },
     },
@@ -285,23 +301,22 @@ async function ensureMerchantLocation() {
     name: 'Default',
   };
 
-  console.log('[eBay] Creating location with body:', JSON.stringify(body));
-  const createResp = await ebayFetch('/sell/inventory/v1/location/default', {
+  // Use zip-based key to avoid conflicts with old invalid "default" location
+  const locationKey = `cw-${postalCode}`;
+  console.log('[eBay] Creating location:', locationKey, 'zip:', postalCode);
+  const createResp = await ebayFetch(`/sell/inventory/v1/location/${locationKey}`, {
     method: 'POST',
     body: JSON.stringify(body),
   });
 
   if (createResp.status === 204 || createResp.status === 200 || createResp.status === 409) {
-    console.log('[eBay] Location created: default');
-    ensureMerchantLocation._key = 'default';
-    return 'default';
+    console.log('[eBay] Location ready:', locationKey);
+    ensureMerchantLocation._key = locationKey;
+    return locationKey;
   }
 
   const errBody = await createResp.json().catch(() => ({}));
   console.error('[eBay] Location creation failed:', createResp.status, JSON.stringify(errBody, null, 2));
-
-  // If creation failed, try without merchantLocationKey and hope eBay uses seller's address
-  console.warn('[eBay] Will try offer without location key');
   ensureMerchantLocation._key = '';
   return '';
 }
@@ -436,6 +451,8 @@ export async function deleteInventoryItem(sku) {
  * Called before re-listing to prevent stale data from conflicting.
  */
 export async function cleanupSku(sku) {
+  // Reset location cache so it's re-evaluated with current settings
+  ensureMerchantLocation._key = null;
   let cleaned = false;
   // Delete all existing offers for this SKU
   try {

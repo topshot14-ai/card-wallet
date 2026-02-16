@@ -25,6 +25,60 @@ export function initEbayListing() {
 }
 
 /**
+ * Ensure the user has a zip code saved for the shipping location.
+ * Prompts once; saved for all future listings.
+ */
+async function ensureZipCode() {
+  let zip = await db.getSetting('sellerZipCode');
+  if (zip) return true;
+  zip = await promptForZipCode();
+  if (!zip) return false;
+  await db.setSetting('sellerZipCode', zip);
+  return true;
+}
+
+/**
+ * One-time prompt for the seller's zip code.
+ */
+function promptForZipCode() {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('modal-overlay');
+    const modal = overlay.querySelector('.modal');
+
+    modal.innerHTML = `
+      <h3>Shipping Location</h3>
+      <p style="font-size:14px;color:var(--gray-400);margin-bottom:16px">Enter your zip code so eBay knows where items ship from.</p>
+      <div class="form-group">
+        <label for="zip-input">Zip Code</label>
+        <input type="text" id="zip-input" inputmode="numeric" maxlength="5" placeholder="12345" style="font-size:18px;text-align:center;padding:8px">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="zip-cancel">Cancel</button>
+        <button class="btn btn-primary" id="zip-confirm">Save</button>
+      </div>
+    `;
+
+    overlay.classList.remove('hidden');
+    document.getElementById('zip-input').focus();
+
+    document.getElementById('zip-cancel').addEventListener('click', () => {
+      overlay.classList.add('hidden');
+      resolve(null);
+    });
+
+    document.getElementById('zip-confirm').addEventListener('click', () => {
+      const zip = document.getElementById('zip-input').value.trim();
+      if (/^\d{5}$/.test(zip)) {
+        overlay.classList.add('hidden');
+        resolve(zip);
+      } else {
+        toast('Enter a valid 5-digit zip code', 'warning');
+      }
+    });
+  });
+}
+
+/**
  * Show the format picker modal and start the listing flow for a single card.
  * @param {object} card - The card to list
  */
@@ -34,6 +88,9 @@ export async function listCardOnEbay(card) {
     toast('Connect to eBay in Settings first', 'warning');
     return;
   }
+
+  // Ensure we have a zip code for the shipping location (one-time prompt)
+  if (!(await ensureZipCode())) return;
 
   // If no images, prompt user to add photos first
   if (!card.imageBlob) {
@@ -304,6 +361,9 @@ async function handleBatchListing() {
     toast('Connect to eBay in Settings first', 'warning');
     return;
   }
+
+  // Ensure we have a zip code for the shipping location (one-time prompt)
+  if (!(await ensureZipCode())) return;
 
   // Get selected card IDs from listing checkboxes
   const checkboxes = document.querySelectorAll('.listing-checkbox:checked');
