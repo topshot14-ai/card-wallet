@@ -114,6 +114,7 @@ export async function listCardOnEbay(card) {
 /**
  * Show format picker modal.
  * Returns { format: 'AUCTION'|'FIXED_PRICE', price: number } or null if cancelled.
+ * For auctions, price=0 means no Buy It Now (pure auction).
  */
 function showFormatPicker(defaultPrice) {
   return new Promise((resolve) => {
@@ -135,9 +136,9 @@ function showFormatPicker(defaultPrice) {
               <span>Auction (7 days)</span>
             </label>
           </div>
-          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99 — set Buy It Now price below</p>
+          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99. Leave price empty for pure auction.</p>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="ebay-price-group">
           <label for="ebay-price" id="ebay-price-label">Price ($)</label>
           <input type="number" id="ebay-price" step="0.01" value="${defaultPrice}" min="0.01">
         </div>
@@ -150,12 +151,23 @@ function showFormatPicker(defaultPrice) {
 
     overlay.classList.remove('hidden');
 
-    // Show auction note and update price label when format changes
+    // Update UI when format changes
     document.querySelectorAll('input[name="ebay-format"]').forEach(radio => {
       radio.addEventListener('change', () => {
         const isAuction = document.querySelector('input[name="ebay-format"]:checked').value === 'AUCTION';
         document.getElementById('auction-note').style.display = isAuction ? 'block' : 'none';
-        document.getElementById('ebay-price-label').textContent = isAuction ? 'Buy It Now Price ($)' : 'Price ($)';
+        const priceInput = document.getElementById('ebay-price');
+        if (isAuction) {
+          document.getElementById('ebay-price-label').textContent = 'Buy It Now Price — optional ($)';
+          priceInput.placeholder = 'Leave empty for no BIN';
+          priceInput.value = '';
+          priceInput.removeAttribute('min');
+        } else {
+          document.getElementById('ebay-price-label').textContent = 'Price ($)';
+          priceInput.placeholder = '';
+          priceInput.value = defaultPrice;
+          priceInput.min = '0.01';
+        }
       });
     });
 
@@ -166,7 +178,15 @@ function showFormatPicker(defaultPrice) {
 
     document.getElementById('ebay-confirm').addEventListener('click', () => {
       const format = document.querySelector('input[name="ebay-format"]:checked').value;
-      const price = parseFloat(document.getElementById('ebay-price').value) || 0.99;
+      const rawPrice = parseFloat(document.getElementById('ebay-price').value);
+      const price = isNaN(rawPrice) ? 0 : rawPrice;
+
+      // Buy It Now requires a price
+      if (format === 'FIXED_PRICE' && price <= 0) {
+        toast('Enter a price for Buy It Now', 'warning');
+        return;
+      }
+
       overlay.classList.add('hidden');
       resolve({ format, price });
     });
@@ -391,7 +411,7 @@ async function handleBatchListing() {
     }
 
     try {
-      await executeListingFlow(card, result.format, card.startPrice || result.price);
+      await executeListingFlow(card, result.format, result.price);
       successCount++;
     } catch (err) {
       hideLoading();
