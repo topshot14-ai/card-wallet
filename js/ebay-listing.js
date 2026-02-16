@@ -68,12 +68,12 @@ function showFormatPicker(defaultPrice) {
           <label>Format</label>
           <div class="format-options">
             <label class="format-option">
-              <input type="radio" name="ebay-format" value="AUCTION" checked>
-              <span>Auction (7 days)</span>
+              <input type="radio" name="ebay-format" value="FIXED_PRICE" checked>
+              <span>Buy It Now</span>
             </label>
             <label class="format-option">
-              <input type="radio" name="ebay-format" value="FIXED_PRICE">
-              <span>Buy It Now</span>
+              <input type="radio" name="ebay-format" value="AUCTION">
+              <span>Auction (7 days)</span>
             </label>
           </div>
         </div>
