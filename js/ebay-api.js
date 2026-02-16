@@ -351,9 +351,8 @@ export async function createOffer(sku, card, format, price, policyIds) {
   // Ensure merchant location exists (eBay requires Item.Country)
   const locationKey = await ensureMerchantLocation();
 
-  // Ensure price is properly formatted (auctions allow 0 = no Buy It Now)
-  const priceValue = parseFloat(price) || 0;
-  if (format !== 'AUCTION' && priceValue <= 0) {
+  const priceValue = parseFloat(price);
+  if (isNaN(priceValue) || priceValue <= 0) {
     throw new Error(`Invalid listing price: ${price}`);
   }
 
@@ -376,14 +375,12 @@ export async function createOffer(sku, card, format, price, policyIds) {
   body.merchantLocationKey = locationKey;
 
   if (format === 'AUCTION') {
+    // BIN must be >= 30% above start price ($0.99 * 1.3 = $1.29)
+    const buyItNow = Math.max(priceValue, 1.29);
     body.pricingSummary = {
       auctionStartPrice: { value: '0.99', currency: 'USD' },
+      price: { value: buyItNow.toFixed(2), currency: 'USD' },
     };
-    // Add Buy It Now price if provided (must be >= 30% above start price)
-    if (priceValue > 0) {
-      const buyItNow = Math.max(priceValue, 1.29);
-      body.pricingSummary.price = { value: buyItNow.toFixed(2), currency: 'USD' };
-    }
     body.listingDuration = 'DAYS_7';
   } else {
     body.pricingSummary = {

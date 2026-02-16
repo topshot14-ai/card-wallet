@@ -136,7 +136,7 @@ function showFormatPicker(defaultPrice) {
               <span>Auction (7 days)</span>
             </label>
           </div>
-          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99. Leave price empty for pure auction.</p>
+          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99</p>
         </div>
         <div class="form-group" id="ebay-price-group">
           <label for="ebay-price" id="ebay-price-label">Price ($)</label>
@@ -156,18 +156,7 @@ function showFormatPicker(defaultPrice) {
       radio.addEventListener('change', () => {
         const isAuction = document.querySelector('input[name="ebay-format"]:checked').value === 'AUCTION';
         document.getElementById('auction-note').style.display = isAuction ? 'block' : 'none';
-        const priceInput = document.getElementById('ebay-price');
-        if (isAuction) {
-          document.getElementById('ebay-price-label').textContent = 'Buy It Now Price — optional ($)';
-          priceInput.placeholder = 'Leave empty for no BIN';
-          priceInput.value = '';
-          priceInput.removeAttribute('min');
-        } else {
-          document.getElementById('ebay-price-label').textContent = 'Price ($)';
-          priceInput.placeholder = '';
-          priceInput.value = defaultPrice;
-          priceInput.min = '0.01';
-        }
+        document.getElementById('ebay-price-label').textContent = isAuction ? 'Buy It Now Price ($)' : 'Price ($)';
       });
     });
 
@@ -178,12 +167,9 @@ function showFormatPicker(defaultPrice) {
 
     document.getElementById('ebay-confirm').addEventListener('click', () => {
       const format = document.querySelector('input[name="ebay-format"]:checked').value;
-      const rawPrice = parseFloat(document.getElementById('ebay-price').value);
-      const price = isNaN(rawPrice) ? 0 : rawPrice;
-
-      // Buy It Now requires a price
-      if (format === 'FIXED_PRICE' && price <= 0) {
-        toast('Enter a price for Buy It Now', 'warning');
+      const price = parseFloat(document.getElementById('ebay-price').value) || 0;
+      if (price <= 0) {
+        toast('Enter a price', 'warning');
         return;
       }
 
