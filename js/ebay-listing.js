@@ -11,6 +11,7 @@ import {
   createOffer,
   publishOffer,
   deleteInventoryItem,
+  cleanupSku,
 } from './ebay-api.js';
 
 /**
@@ -235,6 +236,11 @@ async function executeListingFlow(card, format, price) {
   const policies = await getBusinessPolicies();
   console.log('[eBay] Policies:', JSON.stringify(policies));
 
+  // Step 2.5: Clean up any stale offers/inventory from previous failed attempts
+  console.log('[eBay] Cleaning up stale eBay state for SKU:', sku);
+  showLoading('Preparing listing...');
+  await cleanupSku(sku);
+
   // Step 3: Create inventory item
   console.log('[eBay] Step 3: Creating inventory item, SKU:', sku);
   showLoading('Creating inventory item...');
@@ -256,7 +262,15 @@ async function executeListingFlow(card, format, price) {
   // Step 5: Publish offer
   console.log('[eBay] Step 5: Publishing offer:', offerId);
   showLoading('Publishing listing...');
-  const listingId = await publishOffer(offerId);
+  let listingId;
+  try {
+    listingId = await publishOffer(offerId);
+  } catch (err) {
+    // Clean up on publish failure so next attempt starts completely fresh
+    console.log('[eBay] Publish failed, cleaning up...');
+    await deleteInventoryItem(sku);
+    throw err;
+  }
   console.log('[eBay] Published! Listing ID:', listingId);
 
   // Step 6: Update card with listing info

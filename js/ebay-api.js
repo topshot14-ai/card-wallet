@@ -319,6 +319,12 @@ export async function createOffer(sku, card, format, price, policyIds) {
   // Ensure merchant location exists (eBay requires Item.Country)
   const locationKey = await ensureMerchantLocation();
 
+  // Ensure price is properly formatted
+  const priceValue = parseFloat(price);
+  if (isNaN(priceValue) || priceValue <= 0) {
+    throw new Error(`Invalid listing price: ${price}`);
+  }
+
   const body = {
     sku,
     marketplaceId: 'EBAY_US',
@@ -337,14 +343,16 @@ export async function createOffer(sku, card, format, price, policyIds) {
 
   if (format === 'AUCTION') {
     body.pricingSummary = {
-      auctionStartPrice: { value: String(price), currency: 'USD' },
+      auctionStartPrice: { value: priceValue.toFixed(2), currency: 'USD' },
     };
     body.listingDuration = 'DAYS_7';
   } else {
     body.pricingSummary = {
-      price: { value: String(price), currency: 'USD' },
+      price: { value: priceValue.toFixed(2), currency: 'USD' },
     };
   }
+
+  console.log('[eBay] createOffer body:', JSON.stringify(body, null, 2));
 
   const resp = await ebayFetch('/sell/inventory/v1/offer', {
     method: 'POST',
@@ -356,13 +364,14 @@ export async function createOffer(sku, card, format, price, policyIds) {
     console.error('[eBay] Create offer error:', JSON.stringify(errBody, null, 2));
     const firstError = errBody.errors?.[0];
 
-    // If offer already exists (from a previous failed attempt), delete it and retry
+    // If offer still exists despite cleanup, delete and retry with delay
     if (firstError?.errorId === 25002) {
       const existingId = firstError.parameters?.find(p => p.name === 'offerId')?.value;
       if (existingId) {
-        console.log('[eBay] Deleting stale offer:', existingId);
+        console.log('[eBay] Deleting remaining stale offer:', existingId);
         await ebayFetch(`/sell/inventory/v1/offer/${existingId}`, { method: 'DELETE' });
-        // Retry creating a fresh offer
+        // Wait for eBay to fully process the deletion
+        await new Promise(r => setTimeout(r, 2000));
         const retryResp = await ebayFetch('/sell/inventory/v1/offer', {
           method: 'POST',
           body: JSON.stringify(body),
@@ -415,5 +424,36 @@ export async function deleteInventoryItem(sku) {
     });
   } catch {
     // Best-effort cleanup
+  }
+}
+
+/**
+ * Clean up all eBay state for a SKU (offers + inventory item).
+ * Called before re-listing to prevent stale data from conflicting.
+ */
+export async function cleanupSku(sku) {
+  let cleaned = false;
+  // Delete all existing offers for this SKU
+  try {
+    const resp = await ebayFetch(`/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`);
+    if (resp.ok) {
+      const data = await resp.json();
+      for (const offer of (data.offers || [])) {
+        console.log('[eBay] Cleanup: deleting offer', offer.offerId, 'format:', offer.format);
+        try {
+          await ebayFetch(`/sell/inventory/v1/offer/${offer.offerId}`, { method: 'DELETE' });
+          cleaned = true;
+        } catch {}
+      }
+    }
+  } catch {}
+  // Also delete the inventory item to clear any internal eBay associations
+  try {
+    const resp = await ebayFetch(`/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, { method: 'DELETE' });
+    if (resp.status === 204 || resp.status === 200) cleaned = true;
+  } catch {}
+  if (cleaned) {
+    console.log('[eBay] Cleanup done, waiting for eBay to settle...');
+    await new Promise(r => setTimeout(r, 2000));
   }
 }
