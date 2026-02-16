@@ -3,6 +3,7 @@
 import * as db from './db.js';
 import { toast, confirm, showView, $ } from './ui.js';
 import { cardDisplayName, cardDetailLine } from './card-model.js';
+import { listCardOnEbay } from './ebay-listing.js';
 // Note: db.softDeleteCard and db.softDeleteCards accessed via db.* namespace
 
 let listings = [];
@@ -62,39 +63,43 @@ export async function initListings() {
   });
 
   container.addEventListener('click', async (e) => {
-    // View button
-    const viewBtn = e.target.closest('.listing-view-btn');
-    if (viewBtn) {
+    // List It button — launch eBay listing flow
+    const ebayBtn = e.target.closest('.listing-ebay-btn');
+    if (ebayBtn) {
       e.stopPropagation();
-      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: viewBtn.dataset.id } }));
-      return;
-    }
-
-    // Quick mark sold button
-    const soldBtn = e.target.closest('.listing-sold-btn');
-    if (soldBtn) {
-      e.stopPropagation();
-      const card = listings.find(c => c.id === soldBtn.dataset.id);
+      const card = listings.find(c => c.id === ebayBtn.dataset.id);
       if (card) {
-        card.status = 'sold';
-        card.soldPrice = card.startPrice || 0;
-        card.lastModified = new Date().toISOString();
-        await db.saveCard(card);
-        toast('Card marked as sold', 'success');
+        await listCardOnEbay(card);
         await refreshListings();
       }
       return;
     }
 
-    // Delete button (soft delete → trash)
+    // Move to Collection button
+    const moveBtn = e.target.closest('.listing-move-btn');
+    if (moveBtn) {
+      e.stopPropagation();
+      const card = listings.find(c => c.id === moveBtn.dataset.id);
+      if (card) {
+        card.mode = 'collection';
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+        toast('Card moved to collection', 'success');
+        await refreshListings();
+        window.dispatchEvent(new CustomEvent('refresh-collection'));
+      }
+      return;
+    }
+
+    // Delete Card button (soft delete → trash)
     const delBtn = e.target.closest('.listing-delete-btn');
     if (delBtn) {
       e.stopPropagation();
-      const confirmed = await confirm('Delete Card', 'Move this listing to trash?');
+      const confirmed = await confirm('Delete Card', 'Move this card to trash?');
       if (confirmed) {
         await db.softDeleteCard(delBtn.dataset.id);
         await refreshListings();
-        toast('Listing moved to trash', 'success');
+        toast('Card moved to trash', 'success');
       }
       return;
     }
@@ -174,9 +179,9 @@ function render() {
       </div>
       <div class="listing-price" data-id="${card.id}" title="Tap to edit">${card.startPrice ? '$' + Number(card.startPrice).toFixed(2) : ''}</div>
       <div class="listing-actions">
-        <button class="listing-action-btn listing-view-btn" data-id="${card.id}" title="View" aria-label="View card">&#128065;</button>
-        ${card.status !== 'sold' ? `<button class="listing-action-btn listing-sold-btn" data-id="${card.id}" title="Mark Sold" aria-label="Mark as sold">&#9989;</button>` : ''}
-        <button class="listing-action-btn listing-delete-btn" data-id="${card.id}" title="Delete" aria-label="Delete card">&#128465;</button>
+        ${card.status !== 'listed' && card.status !== 'sold' ? `<button class="listing-text-btn listing-ebay-btn" data-id="${card.id}">List It</button>` : ''}
+        <button class="listing-text-btn listing-move-btn" data-id="${card.id}">Move to Collection</button>
+        <button class="listing-text-btn listing-delete-btn" data-id="${card.id}">Delete Card</button>
       </div>
     </div>
   `;
