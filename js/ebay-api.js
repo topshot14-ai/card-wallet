@@ -136,18 +136,58 @@ export async function createInventoryItem(sku, card, imageUrls) {
   if (card.subset && card.subset.toLowerCase() !== 'base') features.push(card.subset);
   if (features.length > 0) aspects['Features'] = features;
 
+  // eBay condition descriptors — required for trading cards (category 261328)
+  // These are SEPARATE from product.aspects — they use numeric IDs
+  // Ref: https://developer.ebay.com/api-docs/user-guides/static/mip-user-guide/mip-enum-condition-descriptor-ids-for-trading-cards.html
+  const conditionDescriptors = [];
+
   if (card.graded === 'Yes') {
     aspects['Graded'] = ['Yes'];
-    aspects['Professional Grader'] = [card.gradeCompany || 'PSA'];
-    aspects['Grade'] = [card.gradeValue || '10'];
+
+    // Professional Grader (27501) — required for graded cards
+    const graderMap = {
+      'PSA': '275010', 'BCCG': '275011', 'BVG': '275012', 'BGS': '275013',
+      'Beckett': '275013', 'CSG': '275014', 'CGC': '275015', 'SGC': '275016',
+      'KSA': '275017', 'GMA': '275018', 'HGA': '275019',
+    };
+    conditionDescriptors.push({
+      name: '27501',
+      values: [graderMap[card.gradeCompany] || '2750123'], // 2750123 = Other
+    });
+
+    // Grade (27502) — required for graded cards
+    // IDs: 275020=10, 275021=9.5, 275022=9, ..., 2750218=1
+    const gradeMap = {
+      '10': '275020', '9.5': '275021', '9': '275022', '8.5': '275023',
+      '8': '275024', '7.5': '275025', '7': '275026', '6.5': '275027',
+      '6': '275028', '5.5': '275029', '5': '2750210', '4.5': '2750211',
+      '4': '2750212', '3.5': '2750213', '3': '2750214', '2.5': '2750215',
+      '2': '2750216', '1.5': '2750217', '1': '2750218',
+      'Authentic': '2750219',
+    };
+    conditionDescriptors.push({
+      name: '27502',
+      values: [gradeMap[card.gradeValue] || '275020'], // Default to 10
+    });
   } else {
     aspects['Graded'] = ['No'];
-    aspects['Professional Grader'] = ['Not Professionally Graded'];
-    aspects['Grade'] = ['Not Graded'];
+
+    // Card Condition (40001) — required for ungraded cards
+    // 400010=NM+, 400011=Excellent, 400012=Very Good, 400013=Poor
+    const ungradedCondMap = {
+      'Near Mint or Better': '400010',
+      'Excellent': '400011',
+      'Very Good': '400012',
+      'Good': '400012',
+      'Fair': '400013',
+      'Poor': '400013',
+    };
+    conditionDescriptors.push({
+      name: '40001',
+      values: [ungradedCondMap[card.condition] || '400010'],
+    });
   }
 
-  // Use LIKE_NEW for all trading cards — it's the standard condition for this category.
-  // Detailed condition goes in conditionDescription which buyers can see.
   const conditionEnum = 'LIKE_NEW';
 
   // Build description
@@ -172,6 +212,7 @@ export async function createInventoryItem(sku, card, imageUrls) {
     },
     condition: conditionEnum,
     conditionDescription: card.condition || '',
+    conditionDescriptors,
     product: {
       title,
       description: descParts.join(' | '),
