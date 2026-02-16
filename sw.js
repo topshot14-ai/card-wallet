@@ -1,5 +1,5 @@
 // Service Worker for Card Wallet PWA
-const CACHE_NAME = 'card-wallet-v4.6.1';
+const CACHE_NAME = 'card-wallet-v4.6.2';
 const ASSETS = [
   './',
   './index.html',

@@ -205,6 +205,41 @@ export async function createInventoryItem(sku, card, imageUrls) {
 }
 
 /**
+ * Ensure a default merchant location exists (required for offers).
+ * Creates one if it doesn't exist; silently succeeds if already created.
+ */
+async function ensureMerchantLocation() {
+  // Check if we already created it this session
+  if (ensureMerchantLocation._done) return;
+
+  const body = {
+    location: {
+      address: {
+        country: 'US',
+      },
+    },
+    merchantLocationStatus: 'ENABLED',
+    name: 'Default',
+  };
+
+  const resp = await ebayFetch('/sell/inventory/v1/location/default', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  // 204 = created, 409 = already exists — both are fine
+  if (resp.status === 204 || resp.status === 409 || resp.status === 200) {
+    ensureMerchantLocation._done = true;
+    console.log('[eBay] Merchant location ready');
+  } else {
+    const errBody = await resp.json().catch(() => ({}));
+    console.warn('[eBay] Location creation response:', resp.status, JSON.stringify(errBody));
+    // Don't throw — the offer might still work if location was set up in Seller Hub
+    ensureMerchantLocation._done = true;
+  }
+}
+
+/**
  * Create an offer for an inventory item.
  * @param {string} sku - The inventory item SKU
  * @param {object} card - Card data
@@ -214,11 +249,15 @@ export async function createInventoryItem(sku, card, imageUrls) {
  * @returns {string} offerId
  */
 export async function createOffer(sku, card, format, price, policyIds) {
+  // Ensure merchant location exists (eBay requires Item.Country)
+  await ensureMerchantLocation();
+
   const body = {
     sku,
     marketplaceId: 'EBAY_US',
     format,
     categoryId: '261328', // Sports Trading Card Singles
+    merchantLocationKey: 'default',
     listingPolicies: {
       fulfillmentPolicyId: policyIds.fulfillmentPolicyId,
       returnPolicyId: policyIds.returnPolicyId,
