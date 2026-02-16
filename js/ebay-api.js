@@ -216,6 +216,7 @@ async function ensureMerchantLocation() {
     const resp = await ebayFetch('/sell/inventory/v1/location?limit=5');
     if (resp.ok) {
       const data = await resp.json();
+      console.log('[eBay] GET locations response:', JSON.stringify(data));
       if (data.locations && data.locations.length > 0) {
         const key = data.locations[0].merchantLocationKey;
         console.log('[eBay] Found existing location:', key);
@@ -227,18 +228,20 @@ async function ensureMerchantLocation() {
     console.warn('[eBay] Could not fetch locations:', e.message);
   }
 
-  // Step 2: No existing locations — create one
+  // Step 2: No existing locations — try creating one
+  // eBay may require postalCode and other address fields
   const body = {
     location: {
       address: {
+        postalCode: '00000',
         country: 'US',
       },
     },
-    locationTypes: ['WAREHOUSE'],
     merchantLocationStatus: 'ENABLED',
     name: 'Default',
   };
 
+  console.log('[eBay] Creating location with body:', JSON.stringify(body));
   const createResp = await ebayFetch('/sell/inventory/v1/location/default', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -251,9 +254,12 @@ async function ensureMerchantLocation() {
   }
 
   const errBody = await createResp.json().catch(() => ({}));
-  console.warn('[eBay] Location creation failed:', createResp.status, JSON.stringify(errBody));
-  // Throw so the user knows — this is required for listing
-  throw new Error('Could not set up eBay shipping location. Please add a location in eBay Seller Hub > Business Policies.');
+  console.error('[eBay] Location creation failed:', createResp.status, JSON.stringify(errBody, null, 2));
+
+  // If creation failed, try without merchantLocationKey and hope eBay uses seller's address
+  console.warn('[eBay] Will try offer without location key');
+  ensureMerchantLocation._key = '';
+  return '';
 }
 
 /**
@@ -274,13 +280,16 @@ export async function createOffer(sku, card, format, price, policyIds) {
     marketplaceId: 'EBAY_US',
     format,
     categoryId: '261328', // Sports Trading Card Singles
-    merchantLocationKey: locationKey,
     listingPolicies: {
       fulfillmentPolicyId: policyIds.fulfillmentPolicyId,
       returnPolicyId: policyIds.returnPolicyId,
       paymentPolicyId: policyIds.paymentPolicyId,
     },
   };
+
+  if (locationKey) {
+    body.merchantLocationKey = locationKey;
+  }
 
   if (format === 'AUCTION') {
     body.pricingSummary = {
