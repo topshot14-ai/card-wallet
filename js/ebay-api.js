@@ -188,7 +188,8 @@ export async function createInventoryItem(sku, card, imageUrls) {
     });
   }
 
-  const conditionEnum = 'LIKE_NEW';
+  // LIKE_NEW = Graded (2750), USED_VERY_GOOD = Ungraded (4000)
+  const conditionEnum = card.graded === 'Yes' ? 'LIKE_NEW' : 'USED_VERY_GOOD';
 
   // Build description
   const descParts = [`${card.year || ''} ${card.brand || ''} ${card.setName || ''}`.trim()];
