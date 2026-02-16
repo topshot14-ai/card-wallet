@@ -42,6 +42,19 @@ function blobToBase64(blob) {
   });
 }
 
+// Fetch an image URL via the Cloudflare Worker proxy to bypass CORS
+async function fetchViaProxy(imageUrl) {
+  const workerUrl = await getSetting('ebayWorkerUrl');
+  if (workerUrl) {
+    const proxyUrl = `${workerUrl}/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+    console.log('[Sync] Fetching via proxy:', proxyUrl);
+    return fetch(proxyUrl);
+  }
+  // Fallback to direct fetch if no worker URL configured
+  console.log('[Sync] No worker URL, fetching directly');
+  return fetch(imageUrl);
+}
+
 // Safe wrapper — returns null instead of throwing if Storage SDK missing
 function safeGetStorage() {
   try {
@@ -133,10 +146,11 @@ export async function syncImages() {
     }
 
     // === DOWNLOAD: Storage URL exists but no local blob ===
+    // Use worker proxy to bypass CORS restrictions on Firebase Storage
     if (card.imageStorageUrl && !card.imageBlob) {
       try {
         console.log('[Sync] Downloading front image for', card.id);
-        const resp = await fetch(card.imageStorageUrl);
+        const resp = await fetchViaProxy(card.imageStorageUrl);
         if (resp.ok) {
           const blob = await resp.blob();
           card.imageBlob = await blobToBase64(blob);
@@ -155,7 +169,7 @@ export async function syncImages() {
     if (card.imageBackStorageUrl && !card.imageBackBlob) {
       try {
         console.log('[Sync] Downloading back image for', card.id);
-        const resp = await fetch(card.imageBackStorageUrl);
+        const resp = await fetchViaProxy(card.imageBackStorageUrl);
         if (resp.ok) {
           const blob = await resp.blob();
           card.imageBackBlob = await blobToBase64(blob);

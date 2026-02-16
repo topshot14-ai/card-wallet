@@ -144,16 +144,16 @@ export async function createInventoryItem(sku, card, imageUrls) {
     aspects['Graded'] = ['No'];
   }
 
-  // Condition: 2750 = graded, 4000 = ungraded NM
-  const conditionMap = {
-    'Near Mint or Better': '4000',
-    'Excellent': '5000',
-    'Very Good': '6000',
-    'Good': '7000',
-    'Fair': '7000',
-    'Poor': '7000',
+  // eBay Sell Inventory API requires ConditionEnum strings, not numeric IDs
+  const conditionEnumMap = {
+    'Near Mint or Better': 'LIKE_NEW',
+    'Excellent': 'USED_EXCELLENT',
+    'Very Good': 'USED_VERY_GOOD',
+    'Good': 'USED_GOOD',
+    'Fair': 'USED_ACCEPTABLE',
+    'Poor': 'USED_ACCEPTABLE',
   };
-  const conditionId = card.graded === 'Yes' ? '2750' : (conditionMap[card.condition] || '4000');
+  const conditionEnum = card.graded === 'Yes' ? 'LIKE_NEW' : (conditionEnumMap[card.condition] || 'LIKE_NEW');
 
   // Build description
   const descParts = [`${card.year || ''} ${card.brand || ''} ${card.setName || ''}`.trim()];
@@ -164,21 +164,28 @@ export async function createInventoryItem(sku, card, imageUrls) {
   if (card.serialNumber) descParts.push(`Serial: ${card.serialNumber}`);
   if (card.condition) descParts.push(`Condition: ${card.condition}`);
 
+  // Ensure title is valid and within 80 char limit
+  let title = card.ebayTitle || `${card.year || ''} ${card.brand || ''} ${card.player || ''}`.trim();
+  if (!title) title = 'Sports Trading Card';
+  if (title.length > 80) title = title.substring(0, 80);
+
   const body = {
     availability: {
       shipToLocationAvailability: {
         quantity: 1,
       },
     },
-    condition: conditionId,
+    condition: conditionEnum,
     conditionDescription: card.condition || '',
     product: {
-      title: card.ebayTitle || `${card.year} ${card.brand} ${card.player}`.trim(),
+      title,
       description: descParts.join(' | '),
       aspects,
       imageUrls: imageUrls,
     },
   };
+
+  console.log('[eBay] createInventoryItem body:', JSON.stringify(body, null, 2));
 
   const resp = await ebayFetch(`/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, {
     method: 'PUT',
@@ -187,8 +194,11 @@ export async function createInventoryItem(sku, card, imageUrls) {
 
   // PUT returns 204 on success (create or update)
   if (resp.status !== 204 && resp.status !== 200) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.errors?.[0]?.message || 'Failed to create inventory item');
+    const errBody = await resp.json().catch(() => ({}));
+    console.error('[eBay] Inventory item error:', JSON.stringify(errBody, null, 2));
+    const firstError = errBody.errors?.[0];
+    const detail = firstError?.longMessage || firstError?.message || `HTTP ${resp.status}`;
+    throw new Error(detail);
   }
 }
 
@@ -231,8 +241,11 @@ export async function createOffer(sku, card, format, price, policyIds) {
   });
 
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.errors?.[0]?.message || 'Failed to create offer');
+    const errBody = await resp.json().catch(() => ({}));
+    console.error('[eBay] Create offer error:', JSON.stringify(errBody, null, 2));
+    const firstError = errBody.errors?.[0];
+    const detail = firstError?.longMessage || firstError?.message || `HTTP ${resp.status}`;
+    throw new Error(detail);
   }
 
   const data = await resp.json();
@@ -250,8 +263,11 @@ export async function publishOffer(offerId) {
   });
 
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.errors?.[0]?.message || 'Failed to publish offer. Check eBay Seller Hub for draft.');
+    const errBody = await resp.json().catch(() => ({}));
+    console.error('[eBay] Publish offer error:', JSON.stringify(errBody, null, 2));
+    const firstError = errBody.errors?.[0];
+    const detail = firstError?.longMessage || firstError?.message || `HTTP ${resp.status}`;
+    throw new Error(detail);
   }
 
   const data = await resp.json();
