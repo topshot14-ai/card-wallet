@@ -136,7 +136,7 @@ function showFormatPicker(defaultPrice) {
               <span>Auction (7 days)</span>
             </label>
           </div>
-          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99</p>
+          <p id="auction-note" style="display:none;font-size:12px;color:var(--gray-400);margin:4px 0 0">Bidding starts at $0.99. Buy It Now price is optional.</p>
         </div>
         <div class="form-group" id="ebay-price-group">
           <label for="ebay-price" id="ebay-price-label">Price ($)</label>
@@ -156,7 +156,18 @@ function showFormatPicker(defaultPrice) {
       radio.addEventListener('change', () => {
         const isAuction = document.querySelector('input[name="ebay-format"]:checked').value === 'AUCTION';
         document.getElementById('auction-note').style.display = isAuction ? 'block' : 'none';
-        document.getElementById('ebay-price-label').textContent = isAuction ? 'Buy It Now Price ($)' : 'Price ($)';
+        const priceInput = document.getElementById('ebay-price');
+        if (isAuction) {
+          document.getElementById('ebay-price-label').textContent = 'Buy It Now Price ($)';
+          priceInput.placeholder = 'Optional';
+          priceInput.value = '';
+          priceInput.removeAttribute('min');
+        } else {
+          document.getElementById('ebay-price-label').textContent = 'Price ($)';
+          priceInput.placeholder = '';
+          priceInput.value = defaultPrice;
+          priceInput.min = '0.01';
+        }
       });
     });
 
@@ -168,8 +179,8 @@ function showFormatPicker(defaultPrice) {
     document.getElementById('ebay-confirm').addEventListener('click', () => {
       const format = document.querySelector('input[name="ebay-format"]:checked').value;
       const price = parseFloat(document.getElementById('ebay-price').value) || 0;
-      if (price <= 0) {
-        toast('Enter a price', 'warning');
+      if (format === 'FIXED_PRICE' && price <= 0) {
+        toast('Enter a price for Buy It Now', 'warning');
         return;
       }
 

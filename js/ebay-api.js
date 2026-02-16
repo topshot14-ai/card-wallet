@@ -101,10 +101,19 @@ export async function getBusinessPolicies() {
   }
   const payment = await paymentResp.json();
 
+  // Find payment policies: immediate pay (for BIN) and non-immediate (for auctions)
+  const paymentPolicies = payment.paymentPolicies || [];
+  const immediatePolicy = paymentPolicies.find(p => p.immediatePay === true);
+  const auctionPolicy = paymentPolicies.find(p => !p.immediatePay);
+  console.log('[eBay] Payment policies:', paymentPolicies.map(p => ({
+    id: p.paymentPolicyId, name: p.name, immediatePay: p.immediatePay,
+  })));
+
   cachedPolicies = {
     fulfillmentPolicyId: fulfillment.fulfillmentPolicies?.[0]?.fulfillmentPolicyId || null,
     returnPolicyId: returns.returnPolicies?.[0]?.returnPolicyId || null,
-    paymentPolicyId: payment.paymentPolicies?.[0]?.paymentPolicyId || null,
+    paymentPolicyId: (immediatePolicy || paymentPolicies[0])?.paymentPolicyId || null,
+    auctionPaymentPolicyId: auctionPolicy?.paymentPolicyId || null,
   };
 
   if (!cachedPolicies.fulfillmentPolicyId || !cachedPolicies.returnPolicyId || !cachedPolicies.paymentPolicyId) {
@@ -351,9 +360,19 @@ export async function createOffer(sku, card, format, price, policyIds) {
   // Ensure merchant location exists (eBay requires Item.Country)
   const locationKey = await ensureMerchantLocation();
 
-  const priceValue = parseFloat(price);
-  if (isNaN(priceValue) || priceValue <= 0) {
+  const priceValue = parseFloat(price) || 0;
+  if (format !== 'AUCTION' && priceValue <= 0) {
     throw new Error(`Invalid listing price: ${price}`);
+  }
+
+  // Pick the right payment policy — auctions without BIN need non-immediate-pay policy
+  const isAuctionNoBin = format === 'AUCTION' && priceValue <= 0;
+  let paymentPolicyId = policyIds.paymentPolicyId;
+  if (isAuctionNoBin) {
+    if (!policyIds.auctionPaymentPolicyId) {
+      throw new Error('Pure auctions need a payment policy without immediate payment. Create one in eBay Seller Hub, or add a Buy It Now price.');
+    }
+    paymentPolicyId = policyIds.auctionPaymentPolicyId;
   }
 
   const body = {
@@ -364,7 +383,7 @@ export async function createOffer(sku, card, format, price, policyIds) {
     listingPolicies: {
       fulfillmentPolicyId: policyIds.fulfillmentPolicyId,
       returnPolicyId: policyIds.returnPolicyId,
-      paymentPolicyId: policyIds.paymentPolicyId,
+      paymentPolicyId,
     },
   };
 
@@ -375,12 +394,14 @@ export async function createOffer(sku, card, format, price, policyIds) {
   body.merchantLocationKey = locationKey;
 
   if (format === 'AUCTION') {
-    // BIN must be >= 30% above start price ($0.99 * 1.3 = $1.29)
-    const buyItNow = Math.max(priceValue, 1.29);
     body.pricingSummary = {
       auctionStartPrice: { value: '0.99', currency: 'USD' },
-      price: { value: buyItNow.toFixed(2), currency: 'USD' },
     };
+    // Add Buy It Now price if provided (must be >= 30% above start price)
+    if (priceValue > 0) {
+      const buyItNow = Math.max(priceValue, 1.29);
+      body.pricingSummary.price = { value: buyItNow.toFixed(2), currency: 'USD' };
+    }
     body.listingDuration = 'DAYS_7';
   } else {
     body.pricingSummary = {
