@@ -245,13 +245,19 @@ function toggleSelectAll() {
 function updateBulkButtons() {
   const deleteBtn = $('#btn-delete-selected');
   const moveBtn = $('#btn-move-to-collection');
+  const ebayBatchBtn = $('#btn-ebay-batch');
   if (selectedIds.size > 0) {
     deleteBtn.classList.remove('hidden');
     deleteBtn.textContent = `Delete (${selectedIds.size})`;
     moveBtn.classList.remove('hidden');
+    if (ebayBatchBtn) {
+      ebayBatchBtn.classList.remove('hidden');
+      ebayBatchBtn.textContent = `Bulk List on eBay (${selectedIds.size})`;
+    }
   } else {
     deleteBtn.classList.add('hidden');
     moveBtn.classList.add('hidden');
+    if (ebayBatchBtn) ebayBatchBtn.classList.add('hidden');
   }
 }
 

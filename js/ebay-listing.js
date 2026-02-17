@@ -376,7 +376,54 @@ async function executeListingFlow(card, format, price) {
 }
 
 /**
- * Batch listing — list multiple selected cards sequentially.
+ * Show a simple bulk auction confirmation modal.
+ * Returns { price: number } or null if cancelled.
+ */
+function showBulkAuctionPrompt(cardCount) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('modal-overlay');
+    const modal = overlay.querySelector('.modal');
+
+    modal.innerHTML = `
+      <h3>Bulk List on eBay</h3>
+      <p style="font-size:14px;color:var(--gray-400);margin-bottom:16px">
+        List <strong>${cardCount} card${cardCount > 1 ? 's' : ''}</strong> as 7-day auctions.
+      </p>
+      <div class="form-group">
+        <label for="bulk-price">Starting Price ($)</label>
+        <input type="number" id="bulk-price" step="0.01" value="0.99" min="0.01" style="font-size:18px;text-align:center;padding:8px">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="bulk-cancel">Cancel</button>
+        <button class="btn btn-primary" id="bulk-confirm">List All</button>
+      </div>
+    `;
+
+    overlay.classList.remove('hidden');
+    document.getElementById('bulk-price').focus();
+    document.getElementById('bulk-price').select();
+
+    document.getElementById('bulk-cancel').addEventListener('click', () => {
+      overlay.classList.add('hidden');
+      restoreModalDOM();
+      resolve(null);
+    });
+
+    document.getElementById('bulk-confirm').addEventListener('click', () => {
+      const price = parseFloat(document.getElementById('bulk-price').value);
+      if (!price || price <= 0) {
+        toast('Enter a valid starting price', 'warning');
+        return;
+      }
+      overlay.classList.add('hidden');
+      restoreModalDOM();
+      resolve({ price });
+    });
+  });
+}
+
+/**
+ * Batch listing — list multiple selected cards as auctions.
  */
 async function handleBatchListing() {
   const connected = await isEbayConnected();
@@ -397,8 +444,8 @@ async function handleBatchListing() {
     return;
   }
 
-  // Show format picker (applies to all cards in batch)
-  const result = await showFormatPicker(0.99);
+  // Show bulk auction prompt
+  const result = await showBulkAuctionPrompt(selectedIds.length);
   if (!result) return;
 
   let successCount = 0;
@@ -414,7 +461,7 @@ async function handleBatchListing() {
     }
 
     try {
-      await executeListingFlow(card, result.format, result.price);
+      await executeListingFlow(card, 'AUCTION', result.price);
       successCount++;
     } catch (err) {
       hideLoading();
