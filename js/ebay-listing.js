@@ -435,33 +435,34 @@ async function handleBatchListing() {
   // Ensure we have a zip code for the shipping location (one-time prompt)
   if (!(await ensureZipCode())) return;
 
-  // Get selected card IDs from listing checkboxes
+  // Get selected card IDs, filtering out already listed/sold
   const checkboxes = document.querySelectorAll('.listing-checkbox:checked');
-  const selectedIds = Array.from(checkboxes).map(cb => cb.dataset.id);
+  const allSelectedIds = Array.from(checkboxes).map(cb => cb.dataset.id);
+  const listableCards = [];
+  for (const id of allSelectedIds) {
+    const card = await db.getCard(id);
+    if (card && card.status !== 'listed' && card.status !== 'sold') {
+      listableCards.push(card);
+    }
+  }
 
-  if (selectedIds.length === 0) {
-    toast('Select cards to list on eBay', 'warning');
+  if (listableCards.length === 0) {
+    toast('No unlisted cards selected', 'warning');
     return;
   }
 
   // Show bulk auction prompt
-  const result = await showBulkAuctionPrompt(selectedIds.length);
+  const result = await showBulkAuctionPrompt(listableCards.length);
   if (!result) return;
 
   let successCount = 0;
   let failCount = 0;
 
-  for (let i = 0; i < selectedIds.length; i++) {
-    showLoading(`Listing card ${i + 1} of ${selectedIds.length}...`);
-
-    const card = await db.getCard(selectedIds[i]);
-    if (!card) {
-      failCount++;
-      continue;
-    }
+  for (let i = 0; i < listableCards.length; i++) {
+    showLoading(`Listing card ${i + 1} of ${listableCards.length}...`);
 
     try {
-      await executeListingFlow(card, 'AUCTION', result.price);
+      await executeListingFlow(listableCards[i], 'AUCTION', result.price);
       successCount++;
     } catch (err) {
       hideLoading();
@@ -473,7 +474,7 @@ async function handleBatchListing() {
   hideLoading();
 
   if (failCount > 0 && successCount > 0) {
-    toast(`Listed ${successCount} of ${selectedIds.length} cards. ${failCount} failed.`, 'warning');
+    toast(`Listed ${successCount} of ${listableCards.length} cards. ${failCount} failed.`, 'warning');
   } else if (successCount > 0) {
     toast(`All ${successCount} cards listed on eBay!`, 'success');
   }

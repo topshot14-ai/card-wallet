@@ -251,8 +251,13 @@ function updateBulkButtons() {
     deleteBtn.textContent = `Delete (${selectedIds.size})`;
     moveBtn.classList.remove('hidden');
     if (ebayBatchBtn) {
-      ebayBatchBtn.classList.remove('hidden');
-      ebayBatchBtn.textContent = `Bulk List on eBay (${selectedIds.size})`;
+      const listableCount = listings.filter(c => selectedIds.has(c.id) && c.status !== 'listed' && c.status !== 'sold').length;
+      if (listableCount > 0) {
+        ebayBatchBtn.classList.remove('hidden');
+        ebayBatchBtn.textContent = `Bulk List on eBay (${listableCount})`;
+      } else {
+        ebayBatchBtn.classList.add('hidden');
+      }
     }
   } else {
     deleteBtn.classList.add('hidden');
