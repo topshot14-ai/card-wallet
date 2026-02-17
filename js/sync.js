@@ -362,7 +362,7 @@ export async function deleteCardRemote(cardId) {
 // ===== Settings Sync =====
 
 const SYNCED_SETTING_KEYS = [
-  'apiKey', 'model', 'defaultSport', 'defaultCondition', 'defaultPrice',
+  'model', 'defaultSport', 'defaultCondition', 'defaultPrice',
   'ebayWorkerUrl', 'ebayClientId', 'ebayRuName',
   'ebayAccessToken', 'ebayRefreshToken', 'ebayTokenExpiry', 'ebayConnected',
 ];

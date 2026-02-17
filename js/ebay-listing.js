@@ -1,7 +1,7 @@
 // eBay listing flow — format picker, image upload, create + publish listing
 
 import * as db from './db.js';
-import { toast, showLoading, hideLoading, $ } from './ui.js';
+import { toast, showLoading, hideLoading, $, restoreModalDOM } from './ui.js';
 import { isEbayConnected } from './ebay-auth.js';
 import { processPhoto } from './camera.js';
 import {
@@ -63,6 +63,7 @@ function promptForZipCode() {
 
     document.getElementById('zip-cancel').addEventListener('click', () => {
       overlay.classList.add('hidden');
+      restoreModalDOM();
       resolve(null);
     });
 
@@ -70,6 +71,7 @@ function promptForZipCode() {
       const zip = document.getElementById('zip-input').value.trim();
       if (/^\d{5}$/.test(zip)) {
         overlay.classList.add('hidden');
+        restoreModalDOM();
         resolve(zip);
       } else {
         toast('Enter a valid 5-digit zip code', 'warning');
@@ -173,6 +175,7 @@ function showFormatPicker(defaultPrice) {
 
     document.getElementById('ebay-cancel').addEventListener('click', () => {
       overlay.classList.add('hidden');
+      restoreModalDOM();
       resolve(null);
     });
 
@@ -185,6 +188,7 @@ function showFormatPicker(defaultPrice) {
       }
 
       overlay.classList.add('hidden');
+      restoreModalDOM();
       resolve({ format, price });
     });
   });
@@ -260,11 +264,13 @@ function promptForPhotos(card) {
 
     document.getElementById('photo-prompt-cancel').addEventListener('click', () => {
       overlay.classList.add('hidden');
+      restoreModalDOM();
       resolve(false);
     });
 
     document.getElementById('photo-prompt-done').addEventListener('click', async () => {
       overlay.classList.add('hidden');
+      restoreModalDOM();
       if (frontPhoto) {
         card.imageBlob = frontPhoto.imageBlob;
         card.imageThumbnail = frontPhoto.thumbnailBase64;

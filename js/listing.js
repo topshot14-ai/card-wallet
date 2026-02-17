@@ -1,7 +1,7 @@
 // Listing queue management and eBay CSV export
 
 import * as db from './db.js';
-import { toast, confirm, showView, $ } from './ui.js';
+import { toast, confirm, showView, $, escapeHtml } from './ui.js';
 import { cardDisplayName, cardDetailLine } from './card-model.js';
 import { listCardOnEbay } from './ebay-listing.js';
 // Note: db.softDeleteCard and db.softDeleteCards accessed via db.* namespace
@@ -109,6 +109,12 @@ export async function initListings() {
       e.stopPropagation();
       startInlineEdit(priceEl);
       return;
+    }
+
+    // Click on listing row — open card detail
+    const item = e.target.closest('.listing-item');
+    if (item && !e.target.closest('.listing-checkbox')) {
+      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: item.dataset.id } }));
     }
   });
 }
@@ -500,8 +506,3 @@ function initSwipeToDelete() {
   }, { passive: true });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}

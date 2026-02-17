@@ -1,7 +1,7 @@
 // Dashboard — P&L, portfolio value, recent activity, best/worst flips, alerts, sport breakdown
 
 import * as db from './db.js';
-import { formatDate, $ } from './ui.js';
+import { formatDate, $, escapeHtml } from './ui.js';
 import { cardDisplayName } from './card-model.js';
 
 export async function initDashboard() {
@@ -243,8 +243,3 @@ function updateTabBadges(listingsCount, collectionCount) {
   });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}

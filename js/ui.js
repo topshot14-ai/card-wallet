@@ -125,3 +125,20 @@ export function $(selector) {
 export function $$(selector) {
   return document.querySelectorAll(selector);
 }
+
+export function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/** Restore the modal's inner DOM after custom modals overwrite it. */
+export function restoreModalDOM() {
+  const modal = document.querySelector('#modal-overlay .modal');
+  if (!modal) return;
+  modal.innerHTML = `
+    <h3 id="modal-title"></h3>
+    <p id="modal-message"></p>
+    <div id="modal-actions" class="modal-actions"></div>
+  `;
+}

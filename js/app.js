@@ -1,7 +1,7 @@
 // Main app initialization, tab navigation, view routing, scan flow
 
 import * as db from './db.js';
-import { toast, showLoading, hideLoading, showView, goBack, formatDate, $, $$ } from './ui.js';
+import { toast, showLoading, hideLoading, showView, goBack, formatDate, $, $$, escapeHtml } from './ui.js';
 import { processPhoto } from './camera.js';
 import { identifyCard } from './ai.js';
 import { createCard, generateEbayTitle, cardDisplayName, cardDetailLine } from './card-model.js';
@@ -17,7 +17,6 @@ import { initDashboard, refreshDashboard } from './dashboard.js';
 
 let currentMode = 'listing';
 let currentCard = null; // Card being reviewed
-let returnView = 'view-scan'; // Where to return after detail view
 
 // Staged photos before identification
 let stagedFront = null; // { fullBase64, thumbnailBase64, imageBlob, imageThumbnail }
@@ -543,6 +542,12 @@ function populateReviewForm(card) {
   $('#field-graded').value = card.graded || 'No';
   $('#field-gradeCompany').value = card.gradeCompany || '';
   $('#field-gradeValue').value = card.gradeValue || '';
+  // Sync graded field disabled state
+  const isGraded = (card.graded || 'No') === 'Yes';
+  $('#field-gradeCompany').disabled = !isGraded;
+  $('#field-gradeValue').disabled = !isGraded;
+  $('#field-gradeCompany').closest('.form-group').style.opacity = isGraded ? '1' : '0.4';
+  $('#field-gradeValue').closest('.form-group').style.opacity = isGraded ? '1' : '0.4';
   $('#field-condition').value = card.condition || 'Near Mint or Better';
   $('#field-ebayTitle').value = card.ebayTitle || '';
   $('#field-startPrice').value = card.startPrice || '';
@@ -1802,8 +1807,3 @@ async function handleIdentifyAll() {
   updateIdentifyAllButton();
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}

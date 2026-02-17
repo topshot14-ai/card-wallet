@@ -1,7 +1,7 @@
 // Settings management: API key, preferences, data export/import
 
 import * as db from './db.js';
-import { toast, confirm, $ } from './ui.js';
+import { toast, confirm, $, escapeHtml } from './ui.js';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut } from './auth.js';
 import { pullAllCards, pullSettings, pushSettings, syncImages } from './sync.js';
 
@@ -386,8 +386,3 @@ export async function refreshTrash() {
   });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}

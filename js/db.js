@@ -168,7 +168,7 @@ export async function getAllSettings() {
 // ===== Data Export / Import =====
 
 export async function exportAllData() {
-  const cards = await getAllCards();
+  const cards = await getAllCards(true); // include trashed cards in backup
   const settings = await getAllSettings();
   // Never export sensitive settings
   delete settings.apiKey;

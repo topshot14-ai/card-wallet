@@ -36,21 +36,21 @@ export function createCard(data = {}) {
     gradeValue: data.gradeValue || '',
     condition: data.condition || 'Near Mint or Better',
     ebayTitle: data.ebayTitle || '',
-    startPrice: data.startPrice || 0.99,
+    startPrice: data.startPrice ?? 0.99,
     compData: data.compData || {},
-    compLookedUpAt: data.compLookedUpAt || null, // ISO timestamp of last comp lookup
+    compLookedUpAt: data.compLookedUpAt ?? null, // ISO timestamp of last comp lookup
     imageBlob: data.imageBlob || null,        // front full image (base64 data URI)
     imageThumbnail: data.imageThumbnail || null, // front thumbnail
     imageBackBlob: data.imageBackBlob || null,   // back full image
     imageBackThumb: data.imageBackThumb || null,  // back thumbnail
     dateAdded: data.dateAdded || new Date().toISOString(),
     lastModified: data.lastModified || new Date().toISOString(),
-    estimatedValueLow: data.estimatedValueLow || null,
-    estimatedValueHigh: data.estimatedValueHigh || null,
-    purchasePrice: data.purchasePrice || null,
+    estimatedValueLow: data.estimatedValueLow ?? null,
+    estimatedValueHigh: data.estimatedValueHigh ?? null,
+    purchasePrice: data.purchasePrice ?? null,
     ebayListingId: data.ebayListingId || null,
     ebayListingUrl: data.ebayListingUrl || null,
-    soldPrice: data.soldPrice || null,
+    soldPrice: data.soldPrice ?? null,
     shippingCarrier: data.shippingCarrier || '',
     trackingNumber: data.trackingNumber || '',
     shippingStatus: data.shippingStatus || 'not_shipped', // 'not_shipped', 'shipped', 'delivered'

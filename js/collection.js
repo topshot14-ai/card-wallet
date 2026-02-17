@@ -2,7 +2,7 @@
 
 import * as db from './db.js';
 import { cardDisplayName, cardDetailLine } from './card-model.js';
-import { $, $$ } from './ui.js';
+import { $, $$, escapeHtml } from './ui.js';
 
 let allCards = [];
 let filteredCards = [];
@@ -29,10 +29,11 @@ export async function initCollection() {
   });
 
   // Filter pills
-  $('#filter-pills').addEventListener('click', (e) => {
+  const filterPillsEl = $('#filter-pills');
+  filterPillsEl.addEventListener('click', (e) => {
     const pill = e.target.closest('.pill');
     if (!pill) return;
-    $$('.pill').forEach(p => p.classList.remove('active'));
+    filterPillsEl.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
     pill.classList.add('active');
     currentFilter = pill.dataset.filter;
     applyFilters();
@@ -316,8 +317,3 @@ function appendLoadMore(container) {
   }
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
