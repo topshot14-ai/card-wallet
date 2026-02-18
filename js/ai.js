@@ -186,26 +186,11 @@ export async function identifyCard(frontBase64, backBase64 = null, onStatusChang
     throw new Error('API key not set. Please add your Claude API key in Settings.');
   }
 
-  const model = await getSetting('model') || 'claude-haiku-4-5-20251001';
+  // Always use Sonnet for card identification — Haiku misidentifies parallels
+  // too often. One Sonnet call is faster than Haiku + Sonnet fallback.
+  const model = FALLBACK_MODEL;
 
-  const cardData = await callVisionAPI(apiKey, model, frontBase64, backBase64);
-
-  // Auto-fallback: if using Haiku and result looks incomplete, retry with Sonnet
-  const shouldFallback = model.startsWith(HAIKU_MODEL_PREFIX) &&
-    isLowConfidence(cardData);
-  if (shouldFallback) {
-    if (onStatusChange) onStatusChange('Verifying with Sonnet for accuracy...');
-    try {
-      const fallbackData = await callVisionAPI(apiKey, FALLBACK_MODEL, frontBase64, backBase64);
-      fallbackData._fallback = true;
-      return fallbackData;
-    } catch {
-      // If fallback fails, return the original Haiku result
-      return cardData;
-    }
-  }
-
-  return cardData;
+  return await callVisionAPI(apiKey, model, frontBase64, backBase64);
 }
 
 /** Core API call — used by identifyCard and its fallback */
