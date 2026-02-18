@@ -321,8 +321,18 @@ function expandCorners(corners, expansionPct, maxW, maxH) {
 }
 
 function applyPerspectiveCorrection(srcCanvas, corners) {
-  // Expand corners outward by 3% to capture slightly beyond detected edges
-  corners = expandCorners(corners, 0.03, srcCanvas.width, srcCanvas.height);
+  // Only expand if the detected quad is a reasonable size (not already too large).
+  // If the quad covers >70% of the image, detection likely failed — skip expansion.
+  const imgArea = srcCanvas.width * srcCanvas.height;
+  const quadArea = Math.abs(
+    (corners[0].x * corners[1].y - corners[1].x * corners[0].y) +
+    (corners[1].x * corners[2].y - corners[2].x * corners[1].y) +
+    (corners[2].x * corners[3].y - corners[3].x * corners[2].y) +
+    (corners[3].x * corners[0].y - corners[0].x * corners[3].y)
+  ) / 2;
+  if (quadArea / imgArea < 0.70) {
+    corners = expandCorners(corners, 0.02, srcCanvas.width, srcCanvas.height);
+  }
 
   const src = cv.imread(srcCanvas);
 
