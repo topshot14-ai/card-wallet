@@ -8,108 +8,64 @@ const FALLBACK_MODEL = 'claude-sonnet-4-6';
 const HAIKU_MODEL_PREFIX = 'claude-haiku';
 
 /**
- * Database of valid parallel names per set.
- * Used to catch cross-set terminology (e.g., "Silver Prizm" in an Optic card).
- * Keys are normalized set name fragments (lowercase). Values are arrays of
- * valid parallel names (case-insensitive matching).
+ * Blocklist of parallel names that are WRONG for a given set.
+ * Only catches known cross-set terminology confusion — never rejects
+ * legitimate parallels we just forgot to list.
+ * Keys are normalized set name fragments (lowercase, longest first).
+ * Values are arrays of wrong parallel names (case-insensitive).
  */
-const PARALLEL_DATABASE = {
-  'optic': [
-    'Base', 'Holo', 'Silver Holo', 'Purple Shock', 'Blue Velocity', 'Hyper Blue',
-    'Red', 'Green', 'Orange', 'Gold', 'Black', 'Pink', 'White Sparkle',
-    'Rated Rookie Holo', 'Gold Vinyl', 'Blue Shimmer', 'Downtown',
-    'Contenders Optic',
+const PARALLEL_BLOCKLIST = {
+  // Optic uses Holo/Shock/Velocity — NOT Prizm/Refractor terminology
+  'donruss optic': [
+    'Silver Prizm', 'Refractor', 'Green Refractor', 'Blue Refractor',
+    'Gold Refractor', 'Purple Refractor', 'Red Refractor', 'Pink Refractor',
+    'X-Fractor', 'Prizm', 'Ice', 'Wave', 'Pulsar',
   ],
+  // Prizm uses Silver/Prizm — NOT Shock/Velocity/Holo/Refractor terminology
   'prizm': [
-    'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
-    'Gold', 'Orange', 'Pink', 'Black', 'Hyper', 'Neon Green', 'Neon Blue',
-    'Neon Pink', 'Red White Blue', 'Red White & Blue', 'Blue Shimmer',
-    'Gold Shimmer', 'Choice', 'No Huddle', 'Mojo', 'Camo',
-    'Black Gold', 'Black Finite', 'Gold Vinyl',
+    'Purple Shock', 'Blue Velocity', 'Hyper Blue', 'Holo',
+    'Refractor', 'Green Refractor', 'Blue Refractor', 'Gold Refractor',
+    'X-Fractor',
   ],
+  // Select uses Silver/Prizm — NOT Shock/Velocity/Holo/Refractor terminology
   'select': [
-    'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
-    'Gold', 'Orange', 'Pink', 'Black', 'Tie-Dye', 'Zebra',
-    'Concourse', 'Premier Level', 'Club Level', 'Field Level',
-    'Tri-Color', 'White', 'Neon Green', 'Scope',
+    'Purple Shock', 'Blue Velocity', 'Hyper Blue', 'Holo',
+    'Refractor', 'Green Refractor', 'Blue Refractor', 'Gold Refractor',
+    'X-Fractor',
   ],
+  // Mosaic uses Silver/Prizm — NOT Shock/Velocity/Holo/Refractor terminology
   'mosaic': [
-    'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
-    'Gold', 'Orange', 'Pink', 'Black', 'Camo', 'Fluorescent Pink',
-    'Fluorescent Orange', 'Fluorescent Yellow', 'Fluorescent Green',
-    'Reactive Blue', 'Reactive Green', 'Genesis', 'Choice',
-    'National Pride', 'Stained Glass',
+    'Purple Shock', 'Blue Velocity', 'Hyper Blue', 'Holo',
+    'Refractor', 'Green Refractor', 'Blue Refractor', 'Gold Refractor',
+    'X-Fractor',
   ],
-  'spectra': [
-    'Base', 'Silver', 'Blue', 'Red', 'Green', 'Purple', 'Gold',
-    'Orange', 'Pink', 'Black', 'Neon Blue', 'Neon Green', 'Neon Pink',
-    'Celestial', 'Marble', 'Wood', 'Interstellar',
-  ],
-  'donruss': [
-    'Base', 'Blue', 'Red', 'Green', 'Purple', 'Gold', 'Orange', 'Pink',
-    'Holo Blue', 'Holo Red', 'Holo Green', 'Holo Purple', 'Holo Orange',
-    'Press Proof Blue', 'Press Proof Red', 'Press Proof Gold',
-    'Rated Rookie', 'Silver',
-  ],
-  'contenders': [
-    'Base', 'Cracked Ice', 'Championship Ticket', 'Playoff Ticket',
-    'Season Ticket', 'Gold', 'Red', 'Blue', 'Green', 'Orange',
-    'Prospect Ticket', 'Hall of Fame Ticket',
-  ],
+  // Chrome uses Refractor — NOT Prizm/Shock/Velocity/Holo terminology
   'chrome': [
-    'Base', 'Refractor', 'Green Refractor', 'Blue Refractor',
-    'Gold Refractor', 'Purple Refractor', 'Orange Refractor',
-    'Red Refractor', 'Pink Refractor', 'Black Refractor',
-    'Sepia Refractor', 'X-Fractor', 'Prism Refractor',
-    'Aqua Refractor', 'Negative Refractor', 'Superfractor',
+    'Silver Prizm', 'Prizm', 'Purple Shock', 'Blue Velocity', 'Hyper Blue',
+    'Holo', 'Silver Holo', 'Genesis', 'Mosaic',
   ],
+  // Bowman Chrome uses Refractor — NOT Prizm/Shock/Holo terminology
   'bowman chrome': [
-    'Base', 'Refractor', 'Green Refractor', 'Blue Refractor',
-    'Gold Refractor', 'Purple Refractor', 'Orange Refractor',
-    'Red Refractor', 'Pink Refractor', 'Black Refractor',
-    'Atomic Refractor', 'Shimmer Refractor', 'Aqua Refractor',
-    'Superfractor',
-  ],
-  'bowman': [
-    'Base', 'Blue', 'Green', 'Gold', 'Orange', 'Purple', 'Red',
-    'Paper', 'Chrome', 'Sky Blue', 'Yellow',
-  ],
-  'topps': [
-    'Base', 'Gold', 'Rainbow Foil', 'Independence Day', 'Vintage Stock',
-    'Clear', 'Pink', 'Black', 'Platinum', 'Printing Plate',
-    'Advanced Stats', 'Mother\'s Day Pink', 'Father\'s Day Blue',
-  ],
-  'immaculate': [
-    'Base', 'Blue', 'Red', 'Green', 'Gold', 'Platinum', 'Black',
-    'Sapphire', 'Ruby', 'Emerald',
-  ],
-  'national treasures': [
-    'Base', 'Blue', 'Red', 'Green', 'Gold', 'Platinum', 'Black',
-    'Sapphire', 'Ruby', 'Emerald', 'Holo Gold', 'Holo Silver',
-  ],
-  'flawless': [
-    'Base', 'Blue', 'Red', 'Green', 'Gold', 'Platinum', 'Black',
-    'Sapphire', 'Ruby', 'Emerald',
+    'Silver Prizm', 'Prizm', 'Purple Shock', 'Blue Velocity', 'Holo',
   ],
 };
 
 /**
- * Validate a parallel against the known set database.
- * Returns { valid, setFound } where:
- *   valid = true if parallel is valid for this set (or set unknown)
- *   setFound = true if the set was found in the database
+ * Check if a parallel is known-wrong for the given set.
+ * Returns { blocked, setFound } where:
+ *   blocked = true if this parallel is definitely wrong for this set
+ *   setFound = true if the set was found in the blocklist
  */
 function validateParallel(setName, parallel) {
-  if (!parallel || !parallel.trim()) return { valid: true, setFound: false };
-  if (!setName || !setName.trim()) return { valid: true, setFound: false };
+  if (!parallel || !parallel.trim()) return { blocked: false, setFound: false };
+  if (!setName || !setName.trim()) return { blocked: false, setFound: false };
 
   const setLower = setName.toLowerCase();
   const parallelLower = parallel.toLowerCase().trim();
 
-  // Find matching set in database (try longest keys first for specificity —
-  // "bowman chrome" should match before "chrome" or "bowman")
+  // Find matching set (try longest keys first for specificity)
   let matchedKey = null;
-  const sortedKeys = Object.keys(PARALLEL_DATABASE).sort((a, b) => b.length - a.length);
+  const sortedKeys = Object.keys(PARALLEL_BLOCKLIST).sort((a, b) => b.length - a.length);
   for (const key of sortedKeys) {
     if (setLower.includes(key)) {
       matchedKey = key;
@@ -117,13 +73,11 @@ function validateParallel(setName, parallel) {
     }
   }
 
-  if (!matchedKey) return { valid: true, setFound: false };
+  if (!matchedKey) return { blocked: false, setFound: false };
 
-  const validParallels = PARALLEL_DATABASE[matchedKey];
-
-  // Case-insensitive exact match against valid parallels
-  const isValid = validParallels.some(p => p.toLowerCase() === parallelLower);
-  return { valid: isValid, setFound: true };
+  const blockedParallels = PARALLEL_BLOCKLIST[matchedKey];
+  const isBlocked = blockedParallels.some(p => p.toLowerCase() === parallelLower);
+  return { blocked: isBlocked, setFound: true };
 }
 
 const SYSTEM_PROMPT = `You are an elite sports trading card identification expert with perfect vision. You have encyclopedic knowledge of every major card release from the 1950s to present day across all sports. Your identifications are used for pricing and listing, so accuracy is critical.
@@ -643,11 +597,11 @@ function normalizeCardData(cardData) {
     }
   }
 
-  // Validate parallel against set-specific database
+  // Check parallel against set-specific blocklist (cross-set terminology)
   if (cardData.setName && cardData.parallel) {
     const result = validateParallel(cardData.setName, cardData.parallel);
-    if (!result.valid && result.setFound) {
-      // Invalid parallel for this set — clear it and flag for user review
+    if (result.blocked) {
+      // Known wrong parallel for this set — clear it and flag for user review
       cardData._parallelNeedsReview = cardData.parallel;
       cardData.parallel = '';
     }
