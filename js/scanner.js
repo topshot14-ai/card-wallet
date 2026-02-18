@@ -3,8 +3,9 @@
 
 const OPENCV_CDN = 'https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js';
 const CARD_RATIO = 5 / 7; // Standard trading card aspect ratio
-const PADDING = 40; // White border padding in px
+const PADDING_RATIO = 0.08; // White border = 8% of card dimension
 const MIN_AREA_RATIO = 0.10; // Card must be at least 10% of image area
+const MAX_AREA_RATIO = 0.95; // Reject contours covering >95% of image (image boundary)
 
 let cvReady = false;
 let cvLoading = null;
@@ -76,25 +77,21 @@ function detectCardEdges(canvas) {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
 
-    // Adaptive threshold for varying lighting
-    const thresh = new cv.Mat();
-    cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+    // Canny edge detection only (no adaptive threshold — it creates
+    // too many edges that merge into an image-boundary contour)
+    cv.Canny(blurred, edges, 30, 100);
 
-    // Canny edge detection
-    cv.Canny(blurred, edges, 50, 150);
-
-    // Combine edges with threshold
-    cv.bitwise_or(edges, thresh, edges);
-    thresh.delete();
-
-    // Dilate to connect broken edges
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
-    cv.dilate(edges, edges, kernel);
+    // Close gaps in card edges with morphological close
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+    cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel);
     kernel.delete();
 
-    cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-    const imgArea = canvas.width * canvas.height;
+    const imgW = canvas.width;
+    const imgH = canvas.height;
+    const imgArea = imgW * imgH;
+    const margin = Math.min(imgW, imgH) * 0.03; // 3% margin from edges
     let bestContour = null;
     let bestArea = 0;
 
@@ -102,16 +99,36 @@ function detectCardEdges(canvas) {
       const contour = contours.get(i);
       const area = cv.contourArea(contour);
 
+      // Too small or too large (image boundary)
       if (area < imgArea * MIN_AREA_RATIO) continue;
+      if (area > imgArea * MAX_AREA_RATIO) continue;
 
       const peri = cv.arcLength(contour, true);
       const approx = new cv.Mat();
       cv.approxPolyDP(contour, approx, 0.02 * peri, true);
 
       if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestArea) {
-        bestArea = area;
-        if (bestContour) bestContour.delete();
-        bestContour = approx;
+        // Check that corners aren't hugging the image edges
+        let hugsEdge = false;
+        for (let j = 0; j < 4; j++) {
+          const px = approx.data32S[j * 2];
+          const py = approx.data32S[j * 2 + 1];
+          if (px < margin && py < margin) hugsEdge = true; // near TL corner
+          if (px > imgW - margin && py < margin) hugsEdge = true; // near TR
+          if (px > imgW - margin && py > imgH - margin) hugsEdge = true; // near BR
+          if (px < margin && py > imgH - margin) hugsEdge = true; // near BL
+        }
+        // Also reject if bounding box spans nearly the full image
+        const rect = cv.boundingRect(approx);
+        if (rect.width > imgW * 0.95 && rect.height > imgH * 0.95) hugsEdge = true;
+
+        if (!hugsEdge) {
+          bestArea = area;
+          if (bestContour) bestContour.delete();
+          bestContour = approx;
+        } else {
+          approx.delete();
+        }
       } else {
         approx.delete();
       }
@@ -200,12 +217,13 @@ function applyPerspectiveCorrection(srcCanvas, corners) {
   const warped = new cv.Mat();
   cv.warpPerspective(src, warped, M, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
 
-  // Place on white canvas with padding
-  const finalW = outW + PADDING * 2;
-  const finalH = outH + PADDING * 2;
+  // Place on white canvas with proportional padding (8% of card size)
+  const pad = Math.round(Math.max(outW, outH) * PADDING_RATIO);
+  const finalW = outW + pad * 2;
+  const finalH = outH + pad * 2;
   const result = new cv.Mat(finalH, finalW, cv.CV_8UC4, new cv.Scalar(255, 255, 255, 255));
 
-  const roi = result.roi(new cv.Rect(PADDING, PADDING, outW, outH));
+  const roi = result.roi(new cv.Rect(pad, pad, outW, outH));
   warped.copyTo(roi);
   roi.delete();
 
