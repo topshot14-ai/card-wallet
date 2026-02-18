@@ -160,10 +160,14 @@ function detectWithSaturation(src, imgW, imgH, imgArea) {
     // Threshold on saturation — card (low saturation) vs colored surface (high saturation)
     cv.threshold(saturation, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-    cv.morphologyEx(binary, binary, cv.MORPH_CLOSE, kernel);
-    cv.morphologyEx(binary, binary, cv.MORPH_OPEN, kernel);
-    kernel.delete();
+    // Large closing kernel bridges the gap across colored card borders
+    // (at 500px detection size, a card border is ~10-20px wide)
+    const closeKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(15, 15));
+    cv.morphologyEx(binary, binary, cv.MORPH_CLOSE, closeKernel);
+    closeKernel.delete();
+    const openKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+    cv.morphologyEx(binary, binary, cv.MORPH_OPEN, openKernel);
+    openKernel.delete();
 
     let result = findCardRect(binary, imgW, imgH, imgArea);
     if (!result) {
@@ -321,8 +325,9 @@ function expandCorners(corners, expansionPct, maxW, maxH) {
 }
 
 function applyPerspectiveCorrection(srcCanvas, corners) {
-  // Only expand if the detected quad is a reasonable size (not already too large).
-  // If the quad covers >70% of the image, detection likely failed — skip expansion.
+  // Adaptive expansion based on how much of the image the detected quad covers.
+  // Small quad = likely found inner artwork boundary, need larger expansion to reach card edge.
+  // Large quad = close to card edge already or detection failed, expand less or not at all.
   const imgArea = srcCanvas.width * srcCanvas.height;
   const quadArea = Math.abs(
     (corners[0].x * corners[1].y - corners[1].x * corners[0].y) +
@@ -330,8 +335,16 @@ function applyPerspectiveCorrection(srcCanvas, corners) {
     (corners[2].x * corners[3].y - corners[3].x * corners[2].y) +
     (corners[3].x * corners[0].y - corners[0].x * corners[3].y)
   ) / 2;
-  if (quadArea / imgArea < 0.70) {
-    corners = expandCorners(corners, 0.02, srcCanvas.width, srcCanvas.height);
+  const coverageRatio = quadArea / imgArea;
+  let expansionPct = 0;
+  if (coverageRatio < 0.55) {
+    expansionPct = 0.06; // Small in frame — likely found inner boundary, expand aggressively
+  } else if (coverageRatio < 0.80) {
+    expansionPct = 0.03; // Medium — minor adjustment
+  }
+  // >80% coverage: skip expansion, detection probably failed
+  if (expansionPct > 0) {
+    corners = expandCorners(corners, expansionPct, srcCanvas.width, srcCanvas.height);
   }
 
   const src = cv.imread(srcCanvas);
