@@ -66,95 +66,205 @@ function loadOpenCV() {
 // ===== Edge Detection =====
 
 function detectCardEdges(canvas) {
+  const imgW = canvas.width;
+  const imgH = canvas.height;
+  const imgArea = imgW * imgH;
+
+  // Try multiple detection strategies, return first success
+  const strategies = [
+    () => detectWithOtsu(canvas, imgW, imgH, imgArea),
+    () => detectWithAdaptive(canvas, imgW, imgH, imgArea),
+    () => detectWithCanny(canvas, imgW, imgH, imgArea),
+  ];
+
+  for (const strategy of strategies) {
+    const result = strategy();
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
+ * Strategy 1: Otsu threshold — best when card and background have different brightness.
+ * Automatically finds the optimal threshold to separate them.
+ */
+function detectWithOtsu(canvas, imgW, imgH, imgArea) {
   const src = cv.imread(canvas);
   const gray = new cv.Mat();
-  const blurred = new cv.Mat();
+  const binary = new cv.Mat();
+  const hierarchy = new cv.Mat();
+  const contours = new cv.MatVector();
+
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+    cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+
+    // Clean up the binary mask — fill small holes, smooth edges
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+    cv.morphologyEx(binary, binary, cv.MORPH_CLOSE, kernel);
+    cv.morphologyEx(binary, binary, cv.MORPH_OPEN, kernel);
+    kernel.delete();
+
+    // Try both normal and inverted (card could be lighter or darker than bg)
+    let result = findBestQuad(binary, contours, hierarchy, imgW, imgH, imgArea);
+    if (!result) {
+      cv.bitwise_not(binary, binary);
+      contours.delete();
+      hierarchy.delete();
+      const contours2 = new cv.MatVector();
+      const hierarchy2 = new cv.Mat();
+      result = findBestQuad(binary, contours2, hierarchy2, imgW, imgH, imgArea);
+      contours2.delete();
+      hierarchy2.delete();
+    }
+    return result;
+  } finally {
+    src.delete();
+    gray.delete();
+    binary.delete();
+    hierarchy.delete();
+    contours.delete();
+  }
+}
+
+/**
+ * Strategy 2: Adaptive threshold with large block size — handles uneven lighting.
+ */
+function detectWithAdaptive(canvas, imgW, imgH, imgArea) {
+  const src = cv.imread(canvas);
+  const gray = new cv.Mat();
+  const binary = new cv.Mat();
+  const hierarchy = new cv.Mat();
+  const contours = new cv.MatVector();
+
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+
+    // Large block size to focus on the card-level brightness change, not card details
+    const blockSize = Math.round(Math.min(imgW, imgH) * 0.15) | 1; // ensure odd
+    cv.adaptiveThreshold(gray, binary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, Math.max(blockSize, 51), 5);
+
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(9, 9));
+    cv.morphologyEx(binary, binary, cv.MORPH_CLOSE, kernel);
+    cv.morphologyEx(binary, binary, cv.MORPH_OPEN, kernel);
+    kernel.delete();
+
+    let result = findBestQuad(binary, contours, hierarchy, imgW, imgH, imgArea);
+    if (!result) {
+      cv.bitwise_not(binary, binary);
+      contours.delete();
+      hierarchy.delete();
+      const contours2 = new cv.MatVector();
+      const hierarchy2 = new cv.Mat();
+      result = findBestQuad(binary, contours2, hierarchy2, imgW, imgH, imgArea);
+      contours2.delete();
+      hierarchy2.delete();
+    }
+    return result;
+  } finally {
+    src.delete();
+    gray.delete();
+    binary.delete();
+    hierarchy.delete();
+    contours.delete();
+  }
+}
+
+/**
+ * Strategy 3: Canny edge detection — fallback for tricky lighting.
+ */
+function detectWithCanny(canvas, imgW, imgH, imgArea) {
+  const src = cv.imread(canvas);
+  const gray = new cv.Mat();
   const edges = new cv.Mat();
   const hierarchy = new cv.Mat();
   const contours = new cv.MatVector();
 
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+    cv.Canny(gray, edges, 30, 100);
 
-    // Canny edge detection only (no adaptive threshold — it creates
-    // too many edges that merge into an image-boundary contour)
-    cv.Canny(blurred, edges, 30, 100);
-
-    // Close gaps in card edges with morphological close
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
     cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel);
     kernel.delete();
 
-    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
-    const imgW = canvas.width;
-    const imgH = canvas.height;
-    const imgArea = imgW * imgH;
-    const margin = Math.min(imgW, imgH) * 0.03; // 3% margin from edges
-    let bestContour = null;
-    let bestArea = 0;
-
-    for (let i = 0; i < contours.size(); i++) {
-      const contour = contours.get(i);
-      const area = cv.contourArea(contour);
-
-      // Too small or too large (image boundary)
-      if (area < imgArea * MIN_AREA_RATIO) continue;
-      if (area > imgArea * MAX_AREA_RATIO) continue;
-
-      const peri = cv.arcLength(contour, true);
-      const approx = new cv.Mat();
-      cv.approxPolyDP(contour, approx, 0.02 * peri, true);
-
-      if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestArea) {
-        // Check that corners aren't hugging the image edges
-        let hugsEdge = false;
-        for (let j = 0; j < 4; j++) {
-          const px = approx.data32S[j * 2];
-          const py = approx.data32S[j * 2 + 1];
-          if (px < margin && py < margin) hugsEdge = true; // near TL corner
-          if (px > imgW - margin && py < margin) hugsEdge = true; // near TR
-          if (px > imgW - margin && py > imgH - margin) hugsEdge = true; // near BR
-          if (px < margin && py > imgH - margin) hugsEdge = true; // near BL
-        }
-        // Also reject if bounding box spans nearly the full image
-        const rect = cv.boundingRect(approx);
-        if (rect.width > imgW * 0.95 && rect.height > imgH * 0.95) hugsEdge = true;
-
-        if (!hugsEdge) {
-          bestArea = area;
-          if (bestContour) bestContour.delete();
-          bestContour = approx;
-        } else {
-          approx.delete();
-        }
-      } else {
-        approx.delete();
-      }
-    }
-
-    if (!bestContour) return null;
-
-    // Extract corner points
-    const pts = [];
-    for (let i = 0; i < 4; i++) {
-      pts.push({
-        x: bestContour.data32S[i * 2],
-        y: bestContour.data32S[i * 2 + 1]
-      });
-    }
-    bestContour.delete();
-
-    return orderCorners(pts);
+    return findBestQuad(edges, contours, hierarchy, imgW, imgH, imgArea);
   } finally {
     src.delete();
     gray.delete();
-    blurred.delete();
     edges.delete();
     hierarchy.delete();
     contours.delete();
   }
+}
+
+/**
+ * Shared: find the best 4-corner contour in a binary image.
+ * Tries multiple epsilon values for approxPolyDP to be more tolerant.
+ */
+function findBestQuad(binary, contours, hierarchy, imgW, imgH, imgArea) {
+  cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+  const margin = Math.min(imgW, imgH) * 0.02;
+  let bestPts = null;
+  let bestArea = 0;
+
+  for (let i = 0; i < contours.size(); i++) {
+    const contour = contours.get(i);
+    const area = cv.contourArea(contour);
+
+    if (area < imgArea * MIN_AREA_RATIO) continue;
+    if (area > imgArea * MAX_AREA_RATIO) continue;
+
+    const peri = cv.arcLength(contour, true);
+
+    // Try multiple epsilon values — noisy contours need more smoothing
+    for (const eps of [0.02, 0.03, 0.04, 0.05]) {
+      const approx = new cv.Mat();
+      cv.approxPolyDP(contour, approx, eps * peri, true);
+
+      if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestArea) {
+        // Reject if bounding box spans nearly the full image
+        const rect = cv.boundingRect(approx);
+        if (rect.width > imgW * 0.95 && rect.height > imgH * 0.95) {
+          approx.delete();
+          continue;
+        }
+
+        // Reject if 3+ corners hug the image boundary
+        let edgeCorners = 0;
+        for (let j = 0; j < 4; j++) {
+          const px = approx.data32S[j * 2];
+          const py = approx.data32S[j * 2 + 1];
+          if (px < margin || px > imgW - margin || py < margin || py > imgH - margin) {
+            edgeCorners++;
+          }
+        }
+        if (edgeCorners >= 3) {
+          approx.delete();
+          continue;
+        }
+
+        // Extract points
+        const pts = [];
+        for (let j = 0; j < 4; j++) {
+          pts.push({
+            x: approx.data32S[j * 2],
+            y: approx.data32S[j * 2 + 1]
+          });
+        }
+        bestArea = area;
+        bestPts = pts;
+      }
+      approx.delete();
+    }
+  }
+
+  return bestPts ? orderCorners(bestPts) : null;
 }
 
 function orderCorners(pts) {
