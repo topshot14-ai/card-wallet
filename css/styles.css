@@ -397,6 +397,16 @@ body {
   color: var(--primary-dark);
 }
 
+.recent-scan-mode.listed {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.recent-scan-mode.sold {
+  background: var(--success-light);
+  color: var(--success);
+}
+
 /* ===== Review Form ===== */
 .review-images {
   display: flex;
@@ -1668,6 +1678,8 @@ body {
 
 [data-theme="dark"] .recent-scan-mode.listing { background: #3b2f14; color: #fbbf24; }
 [data-theme="dark"] .recent-scan-mode.collection { background: #1e3a5f; color: #60a5fa; }
+[data-theme="dark"] .recent-scan-mode.listed { background: #1e3a5f; color: #60a5fa; }
+[data-theme="dark"] .recent-scan-mode.sold { background: #14332a; color: #4ade80; }
 
 [data-theme="dark"] .format-option:has(input:checked) {
   border-color: #3b82f6;

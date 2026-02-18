@@ -806,7 +806,7 @@ async function loadRecentScans() {
         <div class="name">${escapeHtml(cardDisplayName(card))}</div>
         <div class="detail">${escapeHtml(cardDetailLine(card))} &middot; ${formatDate(card.dateAdded)}</div>
       </div>
-      <span class="recent-scan-mode ${card.mode}">${card.mode === 'listing' ? 'Quick List' : 'Collect'}</span>
+      <span class="recent-scan-mode ${card.status === 'sold' ? 'sold' : card.ebayListingId ? 'listed' : card.mode}">${card.status === 'sold' ? 'Sold' : card.ebayListingId ? 'Listed' : card.mode === 'listing' ? 'Quick List' : 'Collect'}</span>
     </div>
   `).join('');
 
