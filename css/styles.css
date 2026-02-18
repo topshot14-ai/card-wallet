@@ -2885,6 +2885,25 @@ a:focus-visible {
   font-weight: 600;
 }
 
+/* ===== Demo Banner ===== */
+.demo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--primary-light);
+  border-radius: 8px;
+  margin: 8px 16px 0;
+  font-size: 14px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .demo-banner {
+  background: #1e3a5f;
+  color: #60a5fa;
+}
+
 /* ===== Responsive ===== */
 @media (min-width: 768px) {
   .collection-grid {

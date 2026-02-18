@@ -163,6 +163,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Onboarding (first-run)
   await initOnboarding();
 
+  // Demo banner — show if demo cards exist
+  if (localStorage.getItem('cw_hasDemo') === 'true') {
+    const allCards = await db.getAllCards();
+    if (allCards.some(c => c.isDemo === true)) {
+      document.getElementById('demo-banner').classList.remove('hidden');
+    } else {
+      localStorage.removeItem('cw_hasDemo');
+    }
+  }
+
+  // Demo clear button
+  document.getElementById('demo-clear-btn').addEventListener('click', clearDemoCards);
+
   // API key gate check
   await checkApiKeyGate();
 
@@ -1412,6 +1425,144 @@ function initEbaySettings() {
   }
 }
 
+// ===== Demo Mode =====
+
+const DEMO_CARDS_DATA = [
+  {
+    player: 'Victor Wembanyama', team: 'San Antonio Spurs', sport: 'Basketball',
+    year: '2023', brand: 'Panini', setName: 'Prizm', subset: 'Base',
+    parallel: 'Silver', cardNumber: '275',
+    estimatedValueLow: 45, estimatedValueHigh: 80, mode: 'collection'
+  },
+  {
+    player: 'Shohei Ohtani', team: 'Los Angeles Dodgers', sport: 'Baseball',
+    year: '2024', brand: 'Topps', setName: 'Chrome', subset: 'Base',
+    parallel: 'Refractor', cardNumber: '1',
+    estimatedValueLow: 25, estimatedValueHigh: 55, mode: 'collection'
+  },
+  {
+    player: 'Patrick Mahomes', team: 'Kansas City Chiefs', sport: 'Football',
+    year: '2023', brand: 'Panini', setName: 'Donruss Optic', subset: 'Base',
+    parallel: 'Purple Shock', cardNumber: '50',
+    estimatedValueLow: 15, estimatedValueHigh: 30, mode: 'collection'
+  },
+  {
+    player: 'Connor McDavid', team: 'Edmonton Oilers', sport: 'Hockey',
+    year: '2023', brand: 'Upper Deck', setName: 'Series 1', subset: 'Base',
+    parallel: '', cardNumber: '75',
+    estimatedValueLow: 5, estimatedValueHigh: 12, mode: 'collection'
+  },
+  {
+    player: 'Luka Doncic', team: 'Dallas Mavericks', sport: 'Basketball',
+    year: '2024', brand: 'Panini', setName: 'Select', subset: 'Courtside',
+    parallel: 'Tie-Dye', cardNumber: '225', serialNumber: '/25',
+    graded: 'Yes', gradeCompany: 'PSA', gradeValue: '10',
+    estimatedValueLow: 200, estimatedValueHigh: 350, mode: 'listing',
+    status: 'listed', startPrice: 249.99
+  }
+];
+
+function generateCardThumbnail(card) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 200;
+  canvas.height = 280;
+  const ctx = canvas.getContext('2d');
+
+  // Sport-based colors
+  const colors = {
+    Basketball: '#e67e22',
+    Baseball: '#c0392b',
+    Football: '#27ae60',
+    Hockey: '#2980b9'
+  };
+  const bg = colors[card.sport] || '#7f8c8d';
+
+  // Background
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 200, 280);
+
+  // Lighter inner card area
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(10, 10, 180, 260, 8);
+  } else {
+    ctx.rect(10, 10, 180, 260);
+  }
+  ctx.fill();
+
+  // Sport label at top
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '600 12px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(card.sport.toUpperCase(), 100, 34);
+
+  // Player name (centered)
+  ctx.fillStyle = 'white';
+  ctx.font = '700 18px -apple-system, sans-serif';
+  const words = card.player.split(' ');
+  if (words.length > 1) {
+    ctx.fillText(words[0], 100, 120);
+    ctx.fillText(words.slice(1).join(' '), 100, 144);
+  } else {
+    ctx.fillText(card.player, 100, 132);
+  }
+
+  // Team
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = '500 13px -apple-system, sans-serif';
+  ctx.fillText(card.team, 100, 172);
+
+  // Set info at bottom
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = '400 11px -apple-system, sans-serif';
+  const setLine = [card.year, card.brand, card.setName].filter(Boolean).join(' ');
+  ctx.fillText(setLine, 100, 240);
+  if (card.parallel) {
+    ctx.fillText(card.parallel, 100, 256);
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
+async function loadDemoCards() {
+  for (const data of DEMO_CARDS_DATA) {
+    const thumb = generateCardThumbnail(data);
+    const card = createCard({
+      ...data,
+      condition: 'Near Mint or Better',
+      imageThumbnail: thumb,
+      imageBlob: thumb
+    });
+    card.isDemo = true;
+    card.ebayTitle = generateEbayTitle(card);
+    await db.saveCardLocal(card);
+  }
+
+  localStorage.setItem('cw_hasDemo', 'true');
+
+  await refreshCollection();
+  await refreshDashboard();
+  await refreshListings();
+  await loadRecentScans();
+}
+
+async function clearDemoCards() {
+  const all = await db.getAllCards();
+  const demoIds = all.filter(c => c.isDemo === true).map(c => c.id);
+  if (demoIds.length > 0) {
+    await db.deleteCards(demoIds);
+  }
+
+  localStorage.removeItem('cw_hasDemo');
+  document.getElementById('demo-banner').classList.add('hidden');
+
+  await refreshCollection();
+  await refreshDashboard();
+  await refreshListings();
+  await loadRecentScans();
+}
+
 // ===== Onboarding (First Run) =====
 
 async function initOnboarding() {
@@ -1420,6 +1571,16 @@ async function initOnboarding() {
 
   const overlay = $('#onboarding-overlay');
   overlay.classList.remove('hidden');
+
+  $('#onboarding-demo-btn').addEventListener('click', async () => {
+    overlay.classList.add('hidden');
+    localStorage.setItem('cw_hasLaunched', 'true');
+    await loadDemoCards();
+    document.getElementById('demo-banner').classList.remove('hidden');
+    // Navigate to collection to see the cards
+    showView('view-collection');
+    $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === 'collection'));
+  });
 
   $('#onboarding-setup-btn').addEventListener('click', () => {
     overlay.classList.add('hidden');
