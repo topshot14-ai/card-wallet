@@ -192,6 +192,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     toast(e.detail.message, 'info', 4000);
   });
 
+  // Background comp refresher — fetch sold prices for all cards periodically
+  initCompRefresher();
+
   // On sign-in, pull remote cards and refresh views
   window.addEventListener('auth-state-changed', async (e) => {
     if (e.detail.signedIn) {
@@ -1290,6 +1293,71 @@ async function fetchAndUpdateDetailComps(card) {
   if (statsEl) { statsEl.innerHTML = ''; statsEl.classList.add('hidden'); }
   if (listEl) { listEl.innerHTML = ''; listEl.classList.add('hidden'); }
   renderDetailCompsData(card.compData, statsEl, listEl);
+}
+
+// ===== Background Comp Refresher =====
+
+const COMP_REFRESH_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+const COMP_STALE_AGE = 4 * 60 * 60 * 1000; // re-fetch if older than 4 hours
+const COMP_CALL_DELAY = 3000; // 3s between API calls to avoid rate limits
+
+function initCompRefresher() {
+  // First run after 30s delay (let app finish loading)
+  setTimeout(() => refreshAllComps(), 30000);
+  // Then every 4 hours
+  setInterval(() => refreshAllComps(), COMP_REFRESH_INTERVAL);
+}
+
+async function refreshAllComps() {
+  const workerUrl = await db.getSetting('ebayWorkerUrl');
+  if (!workerUrl) return;
+
+  let cards;
+  try {
+    cards = await db.getAllCards();
+  } catch { return; }
+
+  // Only cards with enough info to search
+  const searchable = cards.filter(c => c.player && (c.year || c.brand || c.setName));
+
+  // Filter to cards that need a refresh (no data, or stale)
+  const needsRefresh = searchable.filter(c => {
+    if (!c.compData || !c.compData.fetchedAt) return true;
+    const age = Date.now() - new Date(c.compData.fetchedAt).getTime();
+    return age >= COMP_STALE_AGE;
+  });
+
+  if (needsRefresh.length === 0) return;
+
+  console.log(`[Comps] Refreshing ${needsRefresh.length} cards...`);
+
+  for (let i = 0; i < needsRefresh.length; i++) {
+    const card = needsRefresh[i];
+    try {
+      const result = await fetchCompsForCard(card);
+      if (result) {
+        card.estimatedValueLow = result.stats.low;
+        card.estimatedValueHigh = result.stats.high;
+        card.compData = {
+          low: result.stats.low,
+          avg: result.stats.average,
+          high: result.stats.high,
+          items: result.items,
+          fetchedAt: new Date().toISOString()
+        };
+        await db.saveCardLocal(card);
+      }
+    } catch {
+      // Skip this card, continue with others
+    }
+
+    // Delay between calls (skip delay after last card)
+    if (i < needsRefresh.length - 1) {
+      await new Promise(r => setTimeout(r, COMP_CALL_DELAY));
+    }
+  }
+
+  console.log(`[Comps] Background refresh complete`);
 }
 
 function editDetailCard() {
