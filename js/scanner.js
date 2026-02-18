@@ -100,11 +100,49 @@ function detectCardEdges(canvas) {
 
   if (!result) return null;
 
+  // Quality check: reject detections that don't look like a card
+  if (!isCardShaped(result, dw, dh)) return null;
+
   // Scale corners back to original image coordinates
   return result.map(c => ({
     x: Math.round(c.x / scale),
     y: Math.round(c.y / scale)
   }));
+}
+
+/**
+ * Validate that detected corners form a card-shaped quad.
+ * Rejects: wrong aspect ratio, too large, corners hugging image edges.
+ */
+function isCardShaped(corners, imgW, imgH) {
+  // Check aspect ratio — card is 5:7 (0.714) or 7:5 (1.4)
+  const widthTop = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+  const widthBottom = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
+  const heightLeft = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+  const heightRight = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
+  const avgW = (widthTop + widthBottom) / 2;
+  const avgH = (heightLeft + heightRight) / 2;
+  const ratio = Math.min(avgW, avgH) / Math.max(avgW, avgH);
+
+  // Card ratio is ~0.714; accept 0.5 to 0.9 (generous range for perspective distortion)
+  if (ratio < 0.45 || ratio > 0.92) return false;
+
+  // Check area — reject if quad covers >80% of image
+  const quadArea = avgW * avgH;
+  const imgArea = imgW * imgH;
+  if (quadArea / imgArea > 0.80) return false;
+
+  // Check edge proximity — reject if 3+ corners are near image edges
+  const margin = Math.min(imgW, imgH) * 0.05;
+  let edgeCorners = 0;
+  for (const c of corners) {
+    if (c.x < margin || c.x > imgW - margin || c.y < margin || c.y > imgH - margin) {
+      edgeCorners++;
+    }
+  }
+  if (edgeCorners >= 3) return false;
+
+  return true;
 }
 
 /**
