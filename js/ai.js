@@ -170,14 +170,14 @@ async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
   }
 
   const promptText = backBase64
-    ? `Identify this sports trading card using both images above.${colorHint}
+    ? `Identify this sports trading card using both images above.
 
 Step-by-step:
 1. FIRST, find the copyright line at the very BOTTOM of the BACK image. It looks like "2025 Panini – Donruss Optic Football © 2025 Panini America, Inc." — read the EXACT year and full product name from this line. This is your DEFINITIVE source for year, brand, and set name. Do NOT use any other year.
 2. Read the card number from the back (e.g., "No. 225").
 3. Read ALL text on the FRONT — player name, team, any set logo, parallel name, insert name, RC logo, serial numbering.
 4. Cross-reference front and back to confirm the set name and parallel.
-5. Use the COLOR ANALYSIS data above to determine the parallel — this is an objective measurement more reliable than visual color in a compressed photo.
+5. For the PARALLEL: Look at the OUTERMOST border of the front of the card — the very edge of the card. Describe what color you see there. Does it have any warm/reddish undertone (suggesting purple/violet)? Or is it a cool, pure blue? Key difference: Purple Shock has a dark violet outer border with a subtle reddish tint. Blue Velocity has a brighter, cooler blue outer border with no reddish tint.${colorHint}
 6. Output ONLY the JSON.`
     : `Identify this sports trading card from the front image.${colorHint}
 
