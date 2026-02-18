@@ -7,6 +7,136 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 const FALLBACK_MODEL = 'claude-sonnet-4-6';
 const HAIKU_MODEL_PREFIX = 'claude-haiku';
 
+/**
+ * Database of valid parallel names per set.
+ * Used to catch cross-set terminology (e.g., "Silver Prizm" in an Optic card).
+ * Keys are normalized set name fragments (lowercase). Values are arrays of
+ * valid parallel names (case-insensitive matching).
+ */
+const PARALLEL_DATABASE = {
+  'optic': [
+    'Base', 'Holo', 'Purple Shock', 'Blue Velocity', 'Hyper Blue',
+    'Red', 'Green', 'Orange', 'Gold', 'Black', 'Pink', 'White Sparkle',
+    'Rated Rookie Holo', 'Gold Vinyl', 'Blue Shimmer', 'Downtown',
+    'Contenders Optic', 'Silver',
+  ],
+  'prizm': [
+    'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
+    'Gold', 'Orange', 'Pink', 'Black', 'Hyper', 'Neon Green', 'Neon Blue',
+    'Neon Pink', 'Red White Blue', 'Red White & Blue', 'Blue Shimmer',
+    'Gold Shimmer', 'Choice', 'No Huddle', 'Mojo', 'Camo',
+    'Black Gold', 'Black Finite', 'Gold Vinyl',
+  ],
+  'select': [
+    'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
+    'Gold', 'Orange', 'Pink', 'Black', 'Tie-Dye', 'Zebra',
+    'Concourse', 'Premier Level', 'Club Level', 'Field Level',
+    'Tri-Color', 'White', 'Neon Green', 'Scope',
+  ],
+  'mosaic': [
+    'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
+    'Gold', 'Orange', 'Pink', 'Black', 'Camo', 'Fluorescent Pink',
+    'Fluorescent Orange', 'Fluorescent Yellow', 'Fluorescent Green',
+    'Reactive Blue', 'Reactive Green', 'Genesis', 'Choice',
+    'National Pride', 'Stained Glass',
+  ],
+  'spectra': [
+    'Base', 'Silver', 'Blue', 'Red', 'Green', 'Purple', 'Gold',
+    'Orange', 'Pink', 'Black', 'Neon Blue', 'Neon Green', 'Neon Pink',
+    'Celestial', 'Marble', 'Wood', 'Interstellar',
+  ],
+  'donruss': [
+    'Base', 'Blue', 'Red', 'Green', 'Purple', 'Gold', 'Orange', 'Pink',
+    'Holo Blue', 'Holo Red', 'Holo Green', 'Holo Purple', 'Holo Orange',
+    'Press Proof Blue', 'Press Proof Red', 'Press Proof Gold',
+    'Rated Rookie', 'Silver',
+  ],
+  'contenders': [
+    'Base', 'Cracked Ice', 'Championship Ticket', 'Playoff Ticket',
+    'Season Ticket', 'Gold', 'Red', 'Blue', 'Green', 'Orange',
+    'Prospect Ticket', 'Hall of Fame Ticket',
+  ],
+  'chrome': [
+    'Base', 'Refractor', 'Green Refractor', 'Blue Refractor',
+    'Gold Refractor', 'Purple Refractor', 'Orange Refractor',
+    'Red Refractor', 'Pink Refractor', 'Black Refractor',
+    'Sepia Refractor', 'X-Fractor', 'Prism Refractor',
+    'Aqua Refractor', 'Negative Refractor', 'Superfractor',
+  ],
+  'bowman chrome': [
+    'Base', 'Refractor', 'Green Refractor', 'Blue Refractor',
+    'Gold Refractor', 'Purple Refractor', 'Orange Refractor',
+    'Red Refractor', 'Pink Refractor', 'Black Refractor',
+    'Atomic Refractor', 'Shimmer Refractor', 'Aqua Refractor',
+    'Superfractor',
+  ],
+  'bowman': [
+    'Base', 'Blue', 'Green', 'Gold', 'Orange', 'Purple', 'Red',
+    'Paper', 'Chrome', 'Sky Blue', 'Yellow',
+  ],
+  'topps': [
+    'Base', 'Gold', 'Rainbow Foil', 'Independence Day', 'Vintage Stock',
+    'Clear', 'Pink', 'Black', 'Platinum', 'Printing Plate',
+    'Advanced Stats', 'Mother\'s Day Pink', 'Father\'s Day Blue',
+  ],
+  'immaculate': [
+    'Base', 'Blue', 'Red', 'Green', 'Gold', 'Platinum', 'Black',
+    'Sapphire', 'Ruby', 'Emerald',
+  ],
+  'national treasures': [
+    'Base', 'Blue', 'Red', 'Green', 'Gold', 'Platinum', 'Black',
+    'Sapphire', 'Ruby', 'Emerald', 'Holo Gold', 'Holo Silver',
+  ],
+  'flawless': [
+    'Base', 'Blue', 'Red', 'Green', 'Gold', 'Platinum', 'Black',
+    'Sapphire', 'Ruby', 'Emerald',
+  ],
+};
+
+/**
+ * Validate a parallel against the known set database.
+ * Returns { valid, corrected, setFound } where:
+ *   valid = true if parallel is valid for this set (or set unknown)
+ *   corrected = suggested replacement (or null)
+ *   setFound = true if the set was found in the database
+ */
+function validateParallel(setName, parallel) {
+  if (!parallel || !parallel.trim()) return { valid: true, corrected: null, setFound: false };
+  if (!setName || !setName.trim()) return { valid: true, corrected: null, setFound: false };
+
+  const setLower = setName.toLowerCase();
+  const parallelLower = parallel.toLowerCase().trim();
+
+  // Find matching set in database (try longest keys first for specificity —
+  // "bowman chrome" should match before "chrome" or "bowman")
+  let matchedKey = null;
+  const sortedKeys = Object.keys(PARALLEL_DATABASE).sort((a, b) => b.length - a.length);
+  for (const key of sortedKeys) {
+    if (setLower.includes(key)) {
+      matchedKey = key;
+      break;
+    }
+  }
+
+  if (!matchedKey) return { valid: true, corrected: null, setFound: false };
+
+  const validParallels = PARALLEL_DATABASE[matchedKey];
+
+  // Case-insensitive check against valid parallels
+  const isValid = validParallels.some(p => p.toLowerCase() === parallelLower);
+  if (isValid) return { valid: true, corrected: null, setFound: true };
+
+  // Check for partial match (e.g., "Silver Prizm" contains "Silver")
+  // Try to find the closest valid parallel
+  for (const vp of validParallels) {
+    if (parallelLower.includes(vp.toLowerCase()) || vp.toLowerCase().includes(parallelLower)) {
+      return { valid: false, corrected: vp, setFound: true };
+    }
+  }
+
+  return { valid: false, corrected: null, setFound: true };
+}
+
 const SYSTEM_PROMPT = `You are an elite sports trading card identification expert with perfect vision. You have encyclopedic knowledge of every major card release from the 1950s to present day across all sports. Your identifications are used for pricing and listing, so accuracy is critical.
 
 ## Your Approach
@@ -81,7 +211,12 @@ Output ONLY the JSON object — no commentary, no code fences.
 ## Critical Rules
 - When uncertain about ANY field, use an empty string or empty array — never guess
 - Read printed text as your PRIMARY source; visual appearance is only secondary confirmation
-- The back of the card is your most reliable source for year, brand, set name, and card number`;
+- The back of the card is your most reliable source for year, brand, set name, and card number
+- IMPORTANT: Parallel names are SET-SPECIFIC. Do NOT mix terminology between sets:
+  - Donruss Optic uses: Holo, Purple Shock, Blue Velocity, Hyper Blue (NOT "Silver Prizm", "Refractor")
+  - Prizm/Select/Mosaic use: Silver, Silver Prizm, Blue, Purple (NOT "Holo", "Purple Shock", "Refractor")
+  - Topps Chrome/Bowman Chrome use: Refractor, Green Refractor, etc. (NOT "Holo", "Prizm", "Silver")
+  - If unsure which parallel name to use for a set, use an empty string`;
 
 /** Check if AI result is low-confidence (missing critical fields) */
 function isLowConfidence(cardData) {
@@ -520,5 +655,23 @@ function normalizeCardData(cardData) {
       cardData[key] = String(cardData[key]);
     }
   }
+
+  // Validate parallel against set-specific database
+  if (cardData.setName && cardData.parallel) {
+    const result = validateParallel(cardData.setName, cardData.parallel);
+    if (!result.valid) {
+      const originalParallel = cardData.parallel;
+      if (result.corrected) {
+        // Auto-correct to the right parallel name for this set
+        cardData.parallel = result.corrected;
+        cardData._parallelCorrected = `${originalParallel} → ${result.corrected}`;
+      } else {
+        // Unknown parallel for this set — clear it and flag for review
+        cardData.parallel = '';
+        cardData._parallelNeedsReview = originalParallel;
+      }
+    }
+  }
+
   return cardData;
 }
