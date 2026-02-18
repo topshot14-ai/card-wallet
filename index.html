@@ -61,6 +61,27 @@
     </div>
   </div>
 
+  <!-- Scanner Overlay -->
+  <div id="scanner-overlay" class="scanner-overlay hidden">
+    <div class="scanner-header">
+      <span class="scanner-title">Adjust Card Edges</span>
+    </div>
+    <div class="scanner-body">
+      <div id="scanner-canvas-wrap" class="scanner-canvas-wrap">
+        <canvas id="scanner-canvas"></canvas>
+        <canvas id="scanner-lines" class="scanner-lines"></canvas>
+      </div>
+      <div id="scanner-loading" class="scanner-loading hidden">
+        <div class="loading-spinner"></div>
+        <p>Loading image processor...</p>
+      </div>
+    </div>
+    <div id="scanner-controls" class="scanner-controls hidden">
+      <button id="scanner-use-original" class="btn btn-secondary">Use Original</button>
+      <button id="scanner-apply" class="btn btn-primary">Apply</button>
+    </div>
+  </div>
+
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="loading-overlay hidden">
     <div class="loading-spinner"></div>
@@ -628,7 +649,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v5.0.0</p>
+      <p class="app-version">Card Wallet v5.1.0</p>
     </div>
   </div>
 

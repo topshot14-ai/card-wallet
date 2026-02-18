@@ -14,6 +14,7 @@ import { initSyncListeners, pullAllCards, pullSettings, pushSettings } from './s
 import { initEbayAuth, isEbayConnected, updateEbayUI } from './ebay-auth.js';
 import { initEbayListing, listCardOnEbay } from './ebay-listing.js';
 import { initDashboard, refreshDashboard } from './dashboard.js';
+import { showScanner, autoEnhance } from './scanner.js';
 
 let currentMode = 'listing';
 let currentCard = null; // Card being reviewed
@@ -235,6 +236,13 @@ async function handleScanFront(e) {
     stagedFront = await processPhoto(file);
     hideLoading();
 
+    // Scanner step — enhance eBay listing image
+    const scanResult = await showScanner(stagedFront.fullBase64);
+    if (scanResult.enhanced) {
+      stagedFront.fullBase64 = scanResult.fullBase64;
+      stagedFront.imageBlob = scanResult.imageBlob;
+    }
+
     // Show preview
     const preview = document.getElementById('scan-preview-front');
     preview.src = stagedFront.thumbnailBase64;
@@ -258,6 +266,13 @@ async function handleScanBack(e) {
   try {
     stagedBack = await processPhoto(file);
     hideLoading();
+
+    // Scanner step — enhance eBay listing image
+    const scanResult = await showScanner(stagedBack.fullBase64);
+    if (scanResult.enhanced) {
+      stagedBack.fullBase64 = scanResult.fullBase64;
+      stagedBack.imageBlob = scanResult.imageBlob;
+    }
 
     // Show preview
     const preview = document.getElementById('scan-preview-back');
@@ -455,6 +470,13 @@ async function handleReviewAddFront(e) {
     const photo = await processPhoto(file);
     hideLoading();
 
+    // Scanner step — enhance eBay listing image
+    const scanResult = await showScanner(photo.fullBase64);
+    if (scanResult.enhanced) {
+      photo.fullBase64 = scanResult.fullBase64;
+      photo.imageBlob = scanResult.imageBlob;
+    }
+
     currentCard.imageBlob = photo.imageBlob;
     currentCard.imageThumbnail = photo.thumbnailBase64;
 
@@ -479,6 +501,13 @@ async function handleReviewAddBack(e) {
   try {
     const photo = await processPhoto(file);
     hideLoading();
+
+    // Scanner step — enhance eBay listing image
+    const scanResult = await showScanner(photo.fullBase64);
+    if (scanResult.enhanced) {
+      photo.fullBase64 = scanResult.fullBase64;
+      photo.imageBlob = scanResult.imageBlob;
+    }
 
     currentCard.imageBackBlob = photo.imageBlob;
     currentCard.imageBackThumb = photo.thumbnailBase64;
@@ -1693,6 +1722,12 @@ async function handleGalleryUpload(e) {
   for (const file of files) {
     try {
       const photo = await processPhoto(file);
+      // Auto-enhance for batch uploads (non-interactive)
+      const scanResult = await autoEnhance(photo.fullBase64);
+      if (scanResult.enhanced) {
+        photo.fullBase64 = scanResult.fullBase64;
+        photo.imageBlob = scanResult.imageBlob;
+      }
       scanQueue.push({ photo, backPhoto: null, status: 'pending', card: null, error: null });
     } catch {
       scanQueue.push({ photo: null, backPhoto: null, status: 'error', card: null, error: 'Failed to process photo' });

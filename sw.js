@@ -1,5 +1,5 @@
 // Service Worker for Card Wallet PWA
-const CACHE_NAME = 'card-wallet-v4.9.0';
+const CACHE_NAME = 'card-wallet-v5.1.0';
 const ASSETS = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const ASSETS = [
   './js/firebase.js',
   './js/listing.js',
   './js/settings.js',
+  './js/scanner.js',
   './js/sync.js',
   './js/ui.js',
   './manifest.json'
@@ -47,6 +48,23 @@ self.addEventListener('fetch', (event) => {
 
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
+
+  // Cache-first for OpenCV CDN (large WASM, rarely changes)
+  if (url.hostname === 'cdn.jsdelivr.net' && url.pathname.includes('opencv')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
 
   // Network-first for API calls and Firebase
   if (url.hostname === 'api.anthropic.com' ||
