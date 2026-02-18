@@ -32,13 +32,13 @@ const SYSTEM_PROMPT = `You are an elite sports trading card identification exper
 
 **subset**: Look for insert set names printed on the front (e.g., "Rookie Sensations", "Kaboom!", "Downtown"). If no insert name is present, use "Base".
 
-**parallel**: Identify the parallel using BOTH printed text AND the color analysis data provided:
+**parallel**: Identify the parallel using BOTH printed text AND visual inspection of the card's OUTER BORDER color:
 - First check for text on the front face (e.g., "SILVER", "BLUE SHIMMER", "GOLD VINYL") or on the back near the card number
-- If no parallel name is printed, use the COLOR ANALYSIS hue measurement to determine the parallel. The hue measurement is objective and more reliable than visual color in a compressed photo. Common mappings:
-  - Donruss Optic: purple (hue ~125-165°) = Purple Shock, blue (~95-125°) = Blue Velocity/Hyper Blue, red (~0-10°/170°+) = Red, green (~48-78°) = Green, orange (~10-20°) = Orange. IMPORTANT: if the color is reported as "purple", it is Purple Shock — do NOT call it blue.
-  - Prizm/Select/Mosaic: purple (hue ~125-165°) = Purple, blue (~95-125°) = Blue, green = Green, red = Red, gold/yellow (~20-33°) = Gold, pink (~165-170°) = Pink
+- If no parallel name is printed, look at the card's OUTER BORDER color — this is the wide colored frame around the entire card. IGNORE inner frame lines, holographic reflections, and prismatic patterns — only the outermost border color matters. Common parallels:
+  - Donruss Optic: purple outer border = Purple Shock, blue outer border = Blue Velocity/Hyper Blue, red = Red, green = Green, orange = Orange
+  - Prizm/Select/Mosaic: purple = Purple, blue = Blue, green = Green, red = Red, gold/yellow = Gold, pink = Pink
   - Topps Chrome: green = Green Refractor, blue = Blue Refractor, gold = Gold Refractor, purple = Purple Refractor
-- High brightness variance = likely a refractor, shimmer, or silver surface
+- A COLOR ANALYSIS measurement may also be provided as a hint, but if it disagrees with what you clearly see, trust your eyes — holographic cards can skew automated color readings
 - If neither text nor a distinct color is present, use empty string
 
 **cardNumber**: Usually found on the card back. Look for a number preceded by "#" or "No." (e.g., "#123" or "No. 45"). Sometimes on the front in a corner.
@@ -158,7 +158,7 @@ async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
   }
 
   const colorHint = colorInfo
-    ? `\n\nCOLOR ANALYSIS of the card border/frame region: The dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). ${colorInfo.isReflective ? 'High brightness variance detected — likely a refractor/shimmer/silver surface.' : ''} Use this data to determine the correct parallel name. For example, in Donruss Optic: purple (hue ~125-165°) = Purple Shock, blue (hue ~95-125°) = Blue Velocity/Hyper Blue. In Prizm: purple = Purple, blue = Blue. If the color is reported as "purple", it IS purple — do not second-guess it as blue. Trust this hue measurement over visual appearance in the photo.`
+    ? `\n\nCOLOR ANALYSIS (advisory hint — may be imprecise on holographic cards): The sampled dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). ${colorInfo.isReflective ? 'High brightness variance detected — likely a refractor/shimmer/silver surface.' : ''} Use this as a HINT, but if the card's OUTER BORDER clearly looks a different color to you, trust your visual assessment over this measurement. Holographic/prismatic cards have multiple colors (reflections, inner frame lines) that can skew the measurement. The OUTER BORDER color is what determines the parallel name. For Donruss Optic: purple outer border = Purple Shock, blue outer border = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue.`
     : '';
 
   const promptText = backBase64
