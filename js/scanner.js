@@ -4,7 +4,7 @@
 const OPENCV_CDN = 'https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js';
 const CARD_RATIO = 5 / 7; // Standard trading card aspect ratio
 const PADDING_RATIO = 0.08; // White border = 8% of card dimension
-const MIN_AREA_RATIO = 0.10; // Card must be at least 10% of image area
+const MIN_AREA_RATIO = 0.18; // Card must be at least 18% of image area (rejects barcodes/text on white backs)
 const MAX_AREA_RATIO = 0.95; // Reject contours covering >95% of image (image boundary)
 
 let cvReady = false;

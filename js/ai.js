@@ -35,8 +35,8 @@ const SYSTEM_PROMPT = `You are an elite sports trading card identification exper
 **parallel**: Identify the parallel using BOTH printed text AND the color analysis data provided:
 - First check for text on the front face (e.g., "SILVER", "BLUE SHIMMER", "GOLD VINYL") or on the back near the card number
 - If no parallel name is printed, use the COLOR ANALYSIS hue measurement to determine the parallel. The hue measurement is objective and more reliable than visual color in a compressed photo. Common mappings:
-  - Donruss Optic: purple (hue ~140-160°) = Purple Shock, blue (~100-130°) = Blue Velocity/Hyper Blue, red (~0-10°/170°+) = Red, green (~48-78°) = Green, orange (~10-20°) = Orange
-  - Prizm/Select/Mosaic: purple = Purple, blue = Blue, green = Green, red = Red, gold/yellow (~20-33°) = Gold, pink (~162-170°) = Pink
+  - Donruss Optic: purple (hue ~125-165°) = Purple Shock, blue (~95-125°) = Blue Velocity/Hyper Blue, red (~0-10°/170°+) = Red, green (~48-78°) = Green, orange (~10-20°) = Orange. IMPORTANT: if the color is reported as "purple", it is Purple Shock — do NOT call it blue.
+  - Prizm/Select/Mosaic: purple (hue ~125-165°) = Purple, blue (~95-125°) = Blue, green = Green, red = Red, gold/yellow (~20-33°) = Gold, pink (~165-170°) = Pink
   - Topps Chrome: green = Green Refractor, blue = Blue Refractor, gold = Gold Refractor, purple = Purple Refractor
 - High brightness variance = likely a refractor, shimmer, or silver surface
 - If neither text nor a distinct color is present, use empty string
@@ -413,15 +413,16 @@ function rgbToHsv(r, g, b) {
 /** Map HSV hue (0-179) to a human-readable color name */
 function hueToColorName(hue) {
   // These ranges match how card collectors describe parallel colors
+  // Purple starts at 125 — cards like Donruss Optic Purple Shock often
+  // measure 130-155° and must not be confused with blue (which ends ~125°)
   if (hue < 8 || hue >= 170) return 'red';
   if (hue < 20) return 'orange';
   if (hue < 33) return 'gold/yellow';
   if (hue < 48) return 'yellow-green';
   if (hue < 78) return 'green';
   if (hue < 95) return 'teal';
-  if (hue < 130) return 'blue';
-  if (hue < 145) return 'blue-purple';
-  if (hue < 162) return 'purple';
+  if (hue < 125) return 'blue';
+  if (hue < 165) return 'purple';
   if (hue < 170) return 'pink/magenta';
   return 'red';
 }
