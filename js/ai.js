@@ -112,9 +112,13 @@ export async function identifyCard(frontBase64, backBase64 = null, onStatusChang
 
   const cardData = await callVisionAPI(apiKey, model, frontBase64, backBase64);
 
-  // Auto-fallback: if using Haiku and result looks incomplete, retry with Sonnet
-  if (model.startsWith(HAIKU_MODEL_PREFIX) && isLowConfidence(cardData)) {
-    if (onStatusChange) onStatusChange('Retrying with Sonnet for better accuracy...');
+  // Auto-fallback: if using Haiku and result looks incomplete OR back was provided,
+  // retry with Sonnet. When the user scans both sides, accuracy matters — Haiku
+  // often misreads the copyright year and set name from back text.
+  const shouldFallback = model.startsWith(HAIKU_MODEL_PREFIX) &&
+    (isLowConfidence(cardData) || backBase64);
+  if (shouldFallback) {
+    if (onStatusChange) onStatusChange('Verifying with Sonnet for accuracy...');
     try {
       const fallbackData = await callVisionAPI(apiKey, FALLBACK_MODEL, frontBase64, backBase64);
       fallbackData._fallback = true;
@@ -154,18 +158,19 @@ async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
   }
 
   const colorHint = colorInfo
-    ? `\n\nCOLOR ANALYSIS of the card border/frame region: The dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). ${colorInfo.isReflective ? 'High brightness variance detected — likely a refractor/shimmer/silver surface.' : ''} Use this data to determine the correct parallel name. For example, in Donruss Optic: purple (hue ~140-160°) = Purple Shock, blue (hue ~100-130°) = Blue Velocity/Hyper Blue. In Prizm: purple = Purple, blue = Blue. Trust this hue measurement over visual appearance in the photo.`
+    ? `\n\nCOLOR ANALYSIS of the card border/frame region: The dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). ${colorInfo.isReflective ? 'High brightness variance detected — likely a refractor/shimmer/silver surface.' : ''} Use this data to determine the correct parallel name. For example, in Donruss Optic: purple (hue ~125-165°) = Purple Shock, blue (hue ~95-125°) = Blue Velocity/Hyper Blue. In Prizm: purple = Purple, blue = Blue. If the color is reported as "purple", it IS purple — do not second-guess it as blue. Trust this hue measurement over visual appearance in the photo.`
     : '';
 
   const promptText = backBase64
     ? `Identify this sports trading card using both images above.${colorHint}
 
 Step-by-step:
-1. Read ALL text on the BACK of the card first — find the copyright year, brand name, full product/set name, and card number. This is your most reliable source.
-2. Read ALL text on the FRONT — player name, team, any set logo, parallel name, insert name, RC logo, serial numbering.
-3. Cross-reference front and back to confirm the set name, year, and parallel.
-4. Use the COLOR ANALYSIS data above to determine the parallel — this is an objective measurement more reliable than visual color in a compressed photo.
-5. Output ONLY the JSON.`
+1. FIRST, find the copyright line at the very BOTTOM of the BACK image. It looks like "2025 Panini – Donruss Optic Football © 2025 Panini America, Inc." — read the EXACT year and full product name from this line. This is your DEFINITIVE source for year, brand, and set name. Do NOT use any other year.
+2. Read the card number from the back (e.g., "No. 225").
+3. Read ALL text on the FRONT — player name, team, any set logo, parallel name, insert name, RC logo, serial numbering.
+4. Cross-reference front and back to confirm the set name and parallel.
+5. Use the COLOR ANALYSIS data above to determine the parallel — this is an objective measurement more reliable than visual color in a compressed photo.
+6. Output ONLY the JSON.`
     : `Identify this sports trading card from the front image.${colorHint}
 
 Step-by-step:
@@ -306,16 +311,22 @@ async function analyzeCardColors(base64DataUri) {
 
     const w = img.width;
     const h = img.height;
-    const borderPct = 0.12; // Sample outer 12% of each edge
-    const bx = Math.round(w * borderPct);
-    const by = Math.round(h * borderPct);
+    // Sample a band from 5-25% inward from each edge. Skipping the outer 5%
+    // avoids background (paper/desk) pixels. The 5-25% range lands on the
+    // card's colored border regardless of how tightly the card is framed.
+    const innerPct = 0.05;
+    const outerPct = 0.25;
+    const ix = Math.round(w * innerPct);
+    const iy = Math.round(h * innerPct);
+    const ox = Math.round(w * outerPct);
+    const oy = Math.round(h * outerPct);
 
-    // Sample pixels from the border region (4 strips: top, bottom, left, right)
+    // Sample pixels from the border region (4 strips, offset inward)
     const regions = [
-      { x: 0, y: 0, w: w, h: by },           // top strip
-      { x: 0, y: h - by, w: w, h: by },       // bottom strip
-      { x: 0, y: by, w: bx, h: h - by * 2 },  // left strip
-      { x: w - bx, y: by, w: bx, h: h - by * 2 } // right strip
+      { x: ix, y: iy, w: w - ix * 2, h: oy - iy },           // top strip
+      { x: ix, y: h - oy, w: w - ix * 2, h: oy - iy },       // bottom strip
+      { x: ix, y: oy, w: ox - ix, h: h - oy * 2 },            // left strip
+      { x: w - ox, y: oy, w: ox - ix, h: h - oy * 2 }         // right strip
     ];
 
     const hueHist = new Array(180).fill(0);
