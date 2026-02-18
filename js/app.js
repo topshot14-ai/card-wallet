@@ -923,6 +923,12 @@ function showCardDetail(card) {
     ${card.ebayListingId
       ? `<div class="ebay-listed-badge">Listed on eBay — <a href="${escapeHtml(card.ebayListingUrl || '')}" target="_blank">#${escapeHtml(card.ebayListingId)}</a></div>`
       : ''}
+    <div class="detail-section" id="detail-comps">
+      <h3 style="font-size:15px;font-weight:600;color:var(--gray-700);margin-bottom:8px">Recent Sales</h3>
+      <div id="detail-comps-loading" style="font-size:13px;color:var(--gray-500);text-align:center;padding:8px 0">Checking sold prices...</div>
+      <div id="detail-comps-stats" class="hidden"></div>
+      <div id="detail-comps-list" class="hidden"></div>
+    </div>
     <div class="detail-actions">
       ${card.mode === 'listing' && !card.ebayListingId
         ? '<button class="btn btn-ebay ebay-only hidden" id="detail-ebay-btn">List on eBay</button>'
@@ -1181,7 +1187,99 @@ function showCardDetail(card) {
     });
   });
 
+  // Recent Sales: show cached data immediately, then fetch fresh
+  renderDetailComps(card);
+  fetchAndUpdateDetailComps(card);
+
   showView('view-detail');
+}
+
+function renderDetailComps(card) {
+  const section = document.getElementById('detail-comps');
+  const loading = document.getElementById('detail-comps-loading');
+  const statsEl = document.getElementById('detail-comps-stats');
+  const listEl = document.getElementById('detail-comps-list');
+
+  if (!section) return;
+
+  // Hide section if no worker configured
+  db.getSetting('ebayWorkerUrl').then(url => {
+    if (!url) section.classList.add('hidden');
+  });
+
+  if (card.compData && card.compData.items && card.compData.items.length > 0) {
+    loading.classList.add('hidden');
+    renderDetailCompsData(card.compData, statsEl, listEl);
+  }
+}
+
+function renderDetailCompsData(compData, statsEl, listEl) {
+  // Stats row
+  const parts = [];
+  if (compData.avg) parts.push(`<div class="detail-comps-stat"><div class="detail-comps-stat-value">$${Number(compData.avg).toFixed(2)}</div><div class="detail-comps-stat-label">Average</div></div>`);
+  if (compData.low && compData.high) parts.push(`<div class="detail-comps-stat"><div class="detail-comps-stat-value">$${Number(compData.low).toFixed(2)} – $${Number(compData.high).toFixed(2)}</div><div class="detail-comps-stat-label">Range</div></div>`);
+
+  if (parts.length > 0) {
+    statsEl.innerHTML = `<div class="detail-comps-stats">${parts.join('')}</div>`;
+    statsEl.classList.remove('hidden');
+  }
+
+  // Individual items
+  if (compData.items && compData.items.length > 0) {
+    listEl.innerHTML = compData.items.map(item => {
+      const dateStr = item.soldDate ? formatDate(item.soldDate) : '';
+      const titleText = escapeHtml((item.title || '').length > 60 ? item.title.substring(0, 57) + '...' : item.title || '');
+      const link = item.itemUrl ? ` onclick="window.open('${escapeHtml(item.itemUrl)}', '_blank')"` : '';
+      return `<div class="detail-comps-item"${link} style="${item.itemUrl ? 'cursor:pointer' : ''}">
+        <div class="detail-comps-item-info">
+          <span class="detail-comps-item-title">${titleText}</span>
+          ${dateStr ? `<span class="detail-comps-item-date">${dateStr}</span>` : ''}
+        </div>
+        <span class="detail-comps-item-price">$${item.price.toFixed(2)}</span>
+      </div>`;
+    }).join('');
+    listEl.classList.remove('hidden');
+  }
+}
+
+async function fetchAndUpdateDetailComps(card) {
+  const result = await fetchCompsForCard(card);
+  const loading = document.getElementById('detail-comps-loading');
+  const statsEl = document.getElementById('detail-comps-stats');
+  const listEl = document.getElementById('detail-comps-list');
+  const section = document.getElementById('detail-comps');
+
+  if (!section || !loading) return;
+
+  loading.classList.add('hidden');
+
+  if (!result) {
+    // No results — hide if no cached data either
+    if (!card.compData || !card.compData.items || card.compData.items.length === 0) {
+      if (statsEl) statsEl.innerHTML = '<p style="font-size:13px;color:var(--gray-500);text-align:center">No recent sold listings found.</p>';
+      if (statsEl) statsEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  // Update card with fresh data
+  card.estimatedValueLow = result.stats.low;
+  card.estimatedValueHigh = result.stats.high;
+  card.compData = {
+    low: result.stats.low,
+    avg: result.stats.average,
+    high: result.stats.high,
+    items: result.items,
+    fetchedAt: new Date().toISOString()
+  };
+
+  // Save locally (no sync event)
+  try { await db.saveCardLocal(card); } catch {}
+
+  // Re-render the comps section with fresh data
+  if (statsEl) { statsEl.innerHTML = ''; statsEl.classList.add('hidden'); }
+  if (listEl) { listEl.innerHTML = ''; listEl.classList.add('hidden'); }
+  renderDetailCompsData(card.compData, statsEl, listEl);
 }
 
 function editDetailCard() {
@@ -1295,10 +1393,10 @@ function displaySoldPrices(data) {
   $('#btn-use-suggested').classList.remove('hidden');
 }
 
-// Auto-fetch sold prices after scan (non-blocking)
-async function autoFetchSoldPrices(card) {
+// Reusable function to fetch sold comps for any card
+async function fetchCompsForCard(card) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
-  if (!workerUrl) return; // No worker configured, skip silently
+  if (!workerUrl) return null;
 
   const parts = [];
   if (card.year) parts.push(card.year);
@@ -1309,44 +1407,76 @@ async function autoFetchSoldPrices(card) {
   if (card.cardNumber) parts.push(`#${card.cardNumber}`);
 
   const query = parts.join(' ');
-  if (!query.trim()) return;
+  if (!query.trim()) return null;
 
   try {
     const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}`);
-    if (!resp.ok) return;
+    if (!resp.ok) return null;
 
     const data = await resp.json();
-    if (!data.stats || data.stats.count === 0) return;
+    if (!data.stats || data.stats.count === 0) return null;
 
-    // Use real sold data as the estimated value
-    card.estimatedValueLow = data.stats.low;
-    card.estimatedValueHigh = data.stats.high;
-
-    // Update the valuation badge on the review screen
-    const valuationBadge = $('#review-valuation-badge');
-    if (valuationBadge) {
-      const low = data.stats.low.toFixed(2);
-      const high = data.stats.high.toFixed(2);
-      const median = data.stats.median.toFixed(2);
-      valuationBadge.innerHTML = `Sold: $${low} – $${high} (median $${median})<br><span style="font-size:11px;font-weight:400;opacity:0.85">Based on ${data.stats.count} recent sale${data.stats.count > 1 ? 's' : ''}</span>`;
-      valuationBadge.classList.remove('hidden');
-    }
-
-    // Also populate the sold prices results section
-    displaySoldPrices(data);
-
-    // Auto-set suggested price for listings
-    if (card.mode === 'listing' && data.stats.median) {
-      card.startPrice = data.stats.median;
-      $('#field-startPrice').value = data.stats.median.toFixed(2);
-    }
-
-    if (currentCard && currentCard.id === card.id) {
-      currentCard.estimatedValueLow = card.estimatedValueLow;
-      currentCard.estimatedValueHigh = card.estimatedValueHigh;
-    }
+    return {
+      stats: data.stats,
+      items: (data.items || []).map(item => ({
+        title: item.title,
+        price: item.price,
+        soldDate: item.soldDate || null,
+        condition: item.condition || null,
+        itemUrl: item.itemUrl || null
+      }))
+    };
   } catch {
-    // Silently fail — user can still manually check sold prices
+    return null;
+  }
+}
+
+// Auto-fetch sold prices after scan (non-blocking)
+async function autoFetchSoldPrices(card) {
+  const result = await fetchCompsForCard(card);
+  if (!result) return;
+
+  const { stats, items } = result;
+
+  // Use real sold data as the estimated value
+  card.estimatedValueLow = stats.low;
+  card.estimatedValueHigh = stats.high;
+
+  // Store comp data with items
+  card.compData = {
+    low: stats.low,
+    avg: stats.average,
+    high: stats.high,
+    items,
+    fetchedAt: new Date().toISOString()
+  };
+
+  // Update the valuation badge on the review screen
+  const valuationBadge = $('#review-valuation-badge');
+  if (valuationBadge) {
+    const low = stats.low.toFixed(2);
+    const high = stats.high.toFixed(2);
+    const median = stats.median.toFixed(2);
+    const countLabel = stats.filteredCount && stats.filteredCount !== stats.count
+      ? `${stats.filteredCount} of ${stats.count}`
+      : `${stats.count}`;
+    valuationBadge.innerHTML = `Sold: $${low} – $${high} (median $${median})<br><span style="font-size:11px;font-weight:400;opacity:0.85">Based on ${countLabel} recent sale${stats.count > 1 ? 's' : ''}</span>`;
+    valuationBadge.classList.remove('hidden');
+  }
+
+  // Also populate the sold prices results section
+  displaySoldPrices({ stats, items });
+
+  // Auto-set suggested price for listings
+  if (card.mode === 'listing' && stats.median) {
+    card.startPrice = stats.median;
+    $('#field-startPrice').value = stats.median.toFixed(2);
+  }
+
+  if (currentCard && currentCard.id === card.id) {
+    currentCard.estimatedValueLow = card.estimatedValueLow;
+    currentCard.estimatedValueHigh = card.estimatedValueHigh;
+    currentCard.compData = card.compData;
   }
 }
 

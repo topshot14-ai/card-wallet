@@ -301,7 +301,29 @@ function orderCorners(pts) {
 
 // ===== Perspective Correction =====
 
+/**
+ * Expand detected corners outward from centroid by a small margin.
+ * Ensures card corners aren't clipped by edge detection landing slightly inside the card.
+ */
+function expandCorners(corners, expansionPct, maxW, maxH) {
+  // Calculate centroid
+  const cx = corners.reduce((sum, c) => sum + c.x, 0) / 4;
+  const cy = corners.reduce((sum, c) => sum + c.y, 0) / 4;
+
+  return corners.map(c => {
+    const dx = c.x - cx;
+    const dy = c.y - cy;
+    return {
+      x: Math.max(0, Math.min(maxW - 1, Math.round(c.x + dx * expansionPct))),
+      y: Math.max(0, Math.min(maxH - 1, Math.round(c.y + dy * expansionPct)))
+    };
+  });
+}
+
 function applyPerspectiveCorrection(srcCanvas, corners) {
+  // Expand corners outward by 3% to capture slightly beyond detected edges
+  corners = expandCorners(corners, 0.03, srcCanvas.width, srcCanvas.height);
+
   const src = cv.imread(srcCanvas);
 
   // Calculate output dimensions from corners
