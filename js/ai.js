@@ -158,12 +158,15 @@ async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
   }
 
   let colorHint = '';
-  if (colorInfo && colorInfo.isReflective) {
-    // Holographic/prismatic cards produce unreliable color readings — don't
-    // send a color name that could anchor the AI to the wrong parallel.
-    colorHint = `\n\nThis card has a holographic/prismatic/refractor surface. To determine the parallel, carefully examine the OUTER BORDER color of the card (the wide colored frame around the entire card edge). IGNORE inner frame lines, holographic reflections, and prismatic shimmer — only the outermost border color matters. For Donruss Optic: purple border = Purple Shock, blue border = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue.`;
-  } else if (colorInfo) {
-    colorHint = `\n\nCOLOR ANALYSIS of the card border: The dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). Use this to help determine the parallel name. For Donruss Optic: purple = Purple Shock, blue = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue. If this color doesn't match what you see on the outer border, trust your eyes.`;
+  if (colorInfo && colorInfo.confidence !== 'low') {
+    // Include color analysis with confidence level
+    const confNote = colorInfo.confidence === 'high'
+      ? 'HIGH confidence — this measurement is reliable.'
+      : 'MEDIUM confidence — verify against what you see.';
+    colorHint = `\n\nCOLOR ANALYSIS (CIELAB) of the card border: The dominant color is ${colorInfo.name} (L*=${Math.round(colorInfo.lab.L)}, a*=${Math.round(colorInfo.lab.a)}, b*=${Math.round(colorInfo.lab.b)}). ${confNote}${colorInfo.isReflective ? ' Card appears holographic/prismatic.' : ''} Use this to determine the parallel. For Donruss Optic: purple = Purple Shock, blue = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue.`;
+  } else if (colorInfo && colorInfo.confidence === 'low') {
+    // Low confidence — just tell the AI to look carefully
+    colorHint = `\n\nColor analysis was inconclusive${colorInfo.isReflective ? ' (holographic/prismatic surface detected)' : ''}. Carefully examine the card's OUTER BORDER color to determine the parallel. For Donruss Optic: purple border = Purple Shock, blue border = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue.`;
   }
 
   const promptText = backBase64
@@ -295,9 +298,15 @@ function parseCardJson(text) {
 }
 
 /**
- * Analyze dominant colors in the card's border/frame region.
- * Samples the outer 12% of each edge where parallel colors typically show.
- * Returns { name, hue, saturation, isReflective } or null.
+ * Analyze dominant colors in the card's border/frame region using CIELAB.
+ *
+ * CIELAB is perceptually uniform — blue and purple are cleanly separated
+ * by the a* axis (blue has a* near 0, purple has a* > +15). This avoids
+ * the HSV hue ambiguity that made purple/blue indistinguishable.
+ *
+ * Pipeline: downsample → convert to LAB → filter highlights/grays → median → classify
+ *
+ * Returns { name, confidence, lab: {L,a,b}, isReflective } or null.
  */
 async function analyzeCardColors(base64DataUri) {
   try {
@@ -316,9 +325,9 @@ async function analyzeCardColors(base64DataUri) {
 
     const w = img.width;
     const h = img.height;
+
     // Sample a band from 5-25% inward from each edge. Skipping the outer 5%
-    // avoids background (paper/desk) pixels. The 5-25% range lands on the
-    // card's colored border regardless of how tightly the card is framed.
+    // avoids background pixels. The 5-25% range lands on the card border.
     const innerPct = 0.05;
     const outerPct = 0.25;
     const ix = Math.round(w * innerPct);
@@ -326,121 +335,134 @@ async function analyzeCardColors(base64DataUri) {
     const ox = Math.round(w * outerPct);
     const oy = Math.round(h * outerPct);
 
-    // Sample pixels from the border region (4 strips, offset inward)
-    const regions = [
-      { x: ix, y: iy, w: w - ix * 2, h: oy - iy },           // top strip
-      { x: ix, y: h - oy, w: w - ix * 2, h: oy - iy },       // bottom strip
-      { x: ix, y: oy, w: ox - ix, h: h - oy * 2 },            // left strip
-      { x: w - ox, y: oy, w: ox - ix, h: h - oy * 2 }         // right strip
+    // Downsample each border strip to ~20px wide for noise reduction.
+    // Bilinear interpolation naturally averages out holographic streaks.
+    const STRIP_SIZE = 20;
+    const strips = [
+      { x: ix, y: iy, w: w - ix * 2, h: oy - iy },         // top
+      { x: ix, y: h - oy, w: w - ix * 2, h: oy - iy },     // bottom
+      { x: ix, y: oy, w: ox - ix, h: h - oy * 2 },          // left
+      { x: w - ox, y: oy, w: ox - ix, h: h - oy * 2 }       // right
     ];
 
-    const hueHist = new Array(180).fill(0);
-    let totalChromatic = 0;
-    let brightnessValues = [];
+    const labPixels = [];
+    const brightnessValues = [];
+    const tmpCanvas = document.createElement('canvas');
+    const tmpCtx = tmpCanvas.getContext('2d');
 
-    for (const r of regions) {
-      const data = ctx.getImageData(r.x, r.y, r.w, r.h).data;
-      // Sample every 4th pixel for speed
-      for (let i = 0; i < data.length; i += 16) {
-        const red = data[i], green = data[i + 1], blue = data[i + 2];
-        const hsv = rgbToHsv(red, green, blue);
+    for (const s of strips) {
+      if (s.w < 1 || s.h < 1) continue;
+      // Downsample strip to STRIP_SIZE x STRIP_SIZE
+      tmpCanvas.width = STRIP_SIZE;
+      tmpCanvas.height = STRIP_SIZE;
+      tmpCtx.drawImage(canvas, s.x, s.y, s.w, s.h, 0, 0, STRIP_SIZE, STRIP_SIZE);
+      const data = tmpCtx.getImageData(0, 0, STRIP_SIZE, STRIP_SIZE).data;
 
-        brightnessValues.push(hsv.v);
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const lab = rgbToLab(r, g, b);
+        const chroma = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
 
-        // Only count chromatic pixels (saturation > 15%, brightness 15-90%)
-        if (hsv.s > 15 && hsv.v > 15 && hsv.v < 90) {
-          hueHist[hsv.h]++;
-          totalChromatic++;
+        brightnessValues.push(lab.L);
+
+        // Luminance gate: skip specular highlights (L>85) and deep shadows (L<20)
+        // Chroma gate: skip grays/whites (C<12)
+        if (lab.L >= 20 && lab.L <= 85 && chroma >= 12) {
+          labPixels.push(lab);
         }
       }
     }
 
-    if (totalChromatic < 50) return null; // Not enough colored pixels
-
-    // Smooth the histogram (hues are circular, neighboring bins are similar)
-    const smoothed = new Array(180).fill(0);
-    for (let i = 0; i < 180; i++) {
-      for (let d = -3; d <= 3; d++) {
-        smoothed[i] += hueHist[(i + d + 180) % 180];
-      }
-    }
-
-    // Find peak hue
-    let peakHue = 0;
-    let peakCount = 0;
-    for (let i = 0; i < 180; i++) {
-      if (smoothed[i] > peakCount) {
-        peakCount = smoothed[i];
-        peakHue = i;
-      }
-    }
-
-    // Calculate average saturation around the peak hue
-    let satSum = 0;
-    let satCount = 0;
-    for (const r of regions) {
-      const data = ctx.getImageData(r.x, r.y, r.w, r.h).data;
-      for (let i = 0; i < data.length; i += 16) {
-        const hsv = rgbToHsv(data[i], data[i + 1], data[i + 2]);
-        if (Math.abs(hsv.h - peakHue) < 10 || Math.abs(hsv.h - peakHue) > 170) {
-          satSum += hsv.s;
-          satCount++;
-        }
-      }
-    }
-    const avgSat = satCount > 0 ? Math.round(satSum / satCount) : 0;
+    if (labPixels.length < 20) return null; // Not enough chromatic pixels
 
     // Detect reflective surface (high brightness variance = shimmer/refractor)
-    const meanBright = brightnessValues.reduce((a, b) => a + b, 0) / brightnessValues.length;
-    const variance = brightnessValues.reduce((a, b) => a + (b - meanBright) ** 2, 0) / brightnessValues.length;
-    const isReflective = Math.sqrt(variance) > 25;
+    const meanL = brightnessValues.reduce((a, b) => a + b, 0) / brightnessValues.length;
+    const variance = brightnessValues.reduce((a, b) => a + (b - meanL) ** 2, 0) / brightnessValues.length;
+    const isReflective = Math.sqrt(variance) > 18;
 
-    const name = hueToColorName(peakHue);
+    // Compute median LAB — robust against outlier reflections
+    const median = medianLab(labPixels);
 
-    return { name, hue: peakHue, saturation: avgSat, isReflective };
+    // Classify against reference colors
+    const { name, confidence } = classifyLabColor(median);
+
+    return { name, confidence, lab: median, isReflective };
   } catch (err) {
     console.warn('[AI] Color analysis failed:', err.message);
     return null;
   }
 }
 
-/** Convert RGB (0-255) to HSV where H=0-179, S=0-100, V=0-100 */
-function rgbToHsv(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const d = max - min;
-
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h = Math.round(h * 30); // Convert to 0-179 range
-    if (h < 0) h += 180;
-  }
-
-  const s = max === 0 ? 0 : Math.round((d / max) * 100);
-  const v = Math.round(max * 100);
-
-  return { h, s, v };
+/** Compute median of LAB pixel array (robust to outliers) */
+function medianLab(pixels) {
+  const Ls = pixels.map(p => p.L).sort((a, b) => a - b);
+  const as = pixels.map(p => p.a).sort((a, b) => a - b);
+  const bs = pixels.map(p => p.b).sort((a, b) => a - b);
+  const mid = Math.floor(pixels.length / 2);
+  return { L: Ls[mid], a: as[mid], b: bs[mid] };
 }
 
-/** Map HSV hue (0-179) to a human-readable color name */
-function hueToColorName(hue) {
-  // These ranges match how card collectors describe parallel colors
-  // Purple starts at 125 — cards like Donruss Optic Purple Shock often
-  // measure 130-155° and must not be confused with blue (which ends ~125°)
-  if (hue < 8 || hue >= 170) return 'red';
-  if (hue < 20) return 'orange';
-  if (hue < 33) return 'gold/yellow';
-  if (hue < 48) return 'yellow-green';
-  if (hue < 78) return 'green';
-  if (hue < 95) return 'teal';
-  if (hue < 125) return 'blue';
-  if (hue < 165) return 'purple';
-  if (hue < 170) return 'pink/magenta';
-  return 'red';
+/** Convert sRGB (0-255) to CIELAB */
+function rgbToLab(r, g, b) {
+  // sRGB to linear
+  let rl = r / 255, gl = g / 255, bl = b / 255;
+  rl = rl <= 0.04045 ? rl / 12.92 : Math.pow((rl + 0.055) / 1.055, 2.4);
+  gl = gl <= 0.04045 ? gl / 12.92 : Math.pow((gl + 0.055) / 1.055, 2.4);
+  bl = bl <= 0.04045 ? bl / 12.92 : Math.pow((bl + 0.055) / 1.055, 2.4);
+
+  // Linear RGB to XYZ (D65 illuminant)
+  let x = 0.4124564 * rl + 0.3575761 * gl + 0.1804375 * bl;
+  let y = 0.2126729 * rl + 0.7151522 * gl + 0.0721750 * bl;
+  let z = 0.0193339 * rl + 0.1191920 * gl + 0.9503041 * bl;
+
+  // XYZ to LAB
+  const f = (t) => t > 0.008856 ? Math.cbrt(t) : (7.787 * t) + 16 / 116;
+  const fx = f(x / 0.95047);
+  const fy = f(y / 1.00000);
+  const fz = f(z / 1.08883);
+
+  return {
+    L: 116 * fy - 16,
+    a: 500 * (fx - fy),
+    b: 200 * (fy - fz)
+  };
+}
+
+/**
+ * Classify a LAB color against reference trading card parallel colors.
+ * Uses Euclidean distance in LAB space (perceptually uniform).
+ */
+function classifyLabColor(lab) {
+  // Reference LAB values for common card parallel colors
+  const references = [
+    { name: 'red',         L: 45, a: 55,  b: 30  },
+    { name: 'orange',      L: 65, a: 35,  b: 55  },
+    { name: 'gold/yellow', L: 80, a: 0,   b: 70  },
+    { name: 'green',       L: 50, a: -40, b: 30  },
+    { name: 'teal',        L: 50, a: -25, b: -10 },
+    { name: 'blue',        L: 35, a: 5,   b: -45 },
+    { name: 'purple',      L: 30, a: 30,  b: -40 },
+    { name: 'pink/magenta',L: 55, a: 50,  b: -10 },
+    { name: 'silver',      L: 70, a: 0,   b: -3  },
+    { name: 'black',       L: 15, a: 0,   b: 0   },
+  ];
+
+  let bestName = 'unknown';
+  let bestDist = Infinity;
+  for (const ref of references) {
+    const dist = Math.sqrt(
+      (lab.L - ref.L) ** 2 +
+      (lab.a - ref.a) ** 2 +
+      (lab.b - ref.b) ** 2
+    );
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestName = ref.name;
+    }
+  }
+
+  const confidence = bestDist < 20 ? 'high' : bestDist < 35 ? 'medium' : 'low';
+  return { name: bestName, confidence };
 }
 
 function normalizeCardData(cardData) {
