@@ -32,11 +32,14 @@ const SYSTEM_PROMPT = `You are an elite sports trading card identification exper
 
 **subset**: Look for insert set names printed on the front (e.g., "Rookie Sensations", "Kaboom!", "Downtown"). If no insert name is present, use "Base".
 
-**parallel**: READ the parallel name if printed on the card. Look for:
-- Text on the front face (e.g., "SILVER", "BLUE SHIMMER", "GOLD VINYL")
-- Text on the back (often near the card number)
-- NEVER guess a parallel from color or shininess alone. Many parallels look identical in photos (e.g., Silver Prizm vs base Prizm, Blue Velocity vs Purple Shock in Optic)
-- If no parallel name is printed anywhere, use empty string — do NOT guess
+**parallel**: Identify the parallel using BOTH printed text AND the color analysis data provided:
+- First check for text on the front face (e.g., "SILVER", "BLUE SHIMMER", "GOLD VINYL") or on the back near the card number
+- If no parallel name is printed, use the COLOR ANALYSIS hue measurement to determine the parallel. The hue measurement is objective and more reliable than visual color in a compressed photo. Common mappings:
+  - Donruss Optic: purple (hue ~140-160°) = Purple Shock, blue (~100-130°) = Blue Velocity/Hyper Blue, red (~0-10°/170°+) = Red, green (~48-78°) = Green, orange (~10-20°) = Orange
+  - Prizm/Select/Mosaic: purple = Purple, blue = Blue, green = Green, red = Red, gold/yellow (~20-33°) = Gold, pink (~162-170°) = Pink
+  - Topps Chrome: green = Green Refractor, blue = Blue Refractor, gold = Gold Refractor, purple = Purple Refractor
+- High brightness variance = likely a refractor, shimmer, or silver surface
+- If neither text nor a distinct color is present, use empty string
 
 **cardNumber**: Usually found on the card back. Look for a number preceded by "#" or "No." (e.g., "#123" or "No. 45"). Sometimes on the front in a corner.
 
@@ -129,6 +132,9 @@ export async function identifyCard(frontBase64, backBase64 = null, onStatusChang
 async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
   const frontContent = stripDataUri(frontBase64);
 
+  // Analyze dominant colors in the card border to help identify parallels
+  const colorInfo = await analyzeCardColors(frontBase64);
+
   const contentBlocks = [];
 
   // Front image with label
@@ -147,21 +153,27 @@ async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
     });
   }
 
+  const colorHint = colorInfo
+    ? `\n\nCOLOR ANALYSIS of the card border/frame region: The dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). ${colorInfo.isReflective ? 'High brightness variance detected — likely a refractor/shimmer/silver surface.' : ''} Use this data to determine the correct parallel name. For example, in Donruss Optic: purple (hue ~140-160°) = Purple Shock, blue (hue ~100-130°) = Blue Velocity/Hyper Blue. In Prizm: purple = Purple, blue = Blue. Trust this hue measurement over visual appearance in the photo.`
+    : '';
+
   const promptText = backBase64
-    ? `Identify this sports trading card using both images above.
+    ? `Identify this sports trading card using both images above.${colorHint}
 
 Step-by-step:
 1. Read ALL text on the BACK of the card first — find the copyright year, brand name, full product/set name, and card number. This is your most reliable source.
 2. Read ALL text on the FRONT — player name, team, any set logo, parallel name, insert name, RC logo, serial numbering.
 3. Cross-reference front and back to confirm the set name, year, and parallel.
-4. Output ONLY the JSON.`
-    : `Identify this sports trading card from the front image.
+4. Use the COLOR ANALYSIS data above to determine the parallel — this is an objective measurement more reliable than visual color in a compressed photo.
+5. Output ONLY the JSON.`
+    : `Identify this sports trading card from the front image.${colorHint}
 
 Step-by-step:
 1. Read ALL visible text — player name, team, brand logo, set name/logo, card number (if on front), any parallel name printed on the card, RC designation, serial numbering.
 2. Look for visual cues: brand logo style, card design elements, holographic/refractor patterns.
-3. Note: without the back, some fields (exact year, card number, set name) may be uncertain — use empty string rather than guessing.
-4. Output ONLY the JSON.`;
+3. Use the COLOR ANALYSIS data above to determine the parallel — this is an objective measurement more reliable than visual color in a compressed photo.
+4. Note: without the back, some fields (exact year, card number, set name) may be uncertain — use empty string rather than guessing.
+5. Output ONLY the JSON.`;
 
   const MAX_RETRIES = 2;
   let lastError = null;
@@ -270,6 +282,148 @@ function parseCardJson(text) {
   }
 
   throw new Error('Could not parse card data from AI response. Please try again.');
+}
+
+/**
+ * Analyze dominant colors in the card's border/frame region.
+ * Samples the outer 12% of each edge where parallel colors typically show.
+ * Returns { name, hue, saturation, isReflective } or null.
+ */
+async function analyzeCardColors(base64DataUri) {
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = base64DataUri;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+
+    const w = img.width;
+    const h = img.height;
+    const borderPct = 0.12; // Sample outer 12% of each edge
+    const bx = Math.round(w * borderPct);
+    const by = Math.round(h * borderPct);
+
+    // Sample pixels from the border region (4 strips: top, bottom, left, right)
+    const regions = [
+      { x: 0, y: 0, w: w, h: by },           // top strip
+      { x: 0, y: h - by, w: w, h: by },       // bottom strip
+      { x: 0, y: by, w: bx, h: h - by * 2 },  // left strip
+      { x: w - bx, y: by, w: bx, h: h - by * 2 } // right strip
+    ];
+
+    const hueHist = new Array(180).fill(0);
+    let totalChromatic = 0;
+    let brightnessValues = [];
+
+    for (const r of regions) {
+      const data = ctx.getImageData(r.x, r.y, r.w, r.h).data;
+      // Sample every 4th pixel for speed
+      for (let i = 0; i < data.length; i += 16) {
+        const red = data[i], green = data[i + 1], blue = data[i + 2];
+        const hsv = rgbToHsv(red, green, blue);
+
+        brightnessValues.push(hsv.v);
+
+        // Only count chromatic pixels (saturation > 15%, brightness 15-90%)
+        if (hsv.s > 15 && hsv.v > 15 && hsv.v < 90) {
+          hueHist[hsv.h]++;
+          totalChromatic++;
+        }
+      }
+    }
+
+    if (totalChromatic < 50) return null; // Not enough colored pixels
+
+    // Smooth the histogram (hues are circular, neighboring bins are similar)
+    const smoothed = new Array(180).fill(0);
+    for (let i = 0; i < 180; i++) {
+      for (let d = -3; d <= 3; d++) {
+        smoothed[i] += hueHist[(i + d + 180) % 180];
+      }
+    }
+
+    // Find peak hue
+    let peakHue = 0;
+    let peakCount = 0;
+    for (let i = 0; i < 180; i++) {
+      if (smoothed[i] > peakCount) {
+        peakCount = smoothed[i];
+        peakHue = i;
+      }
+    }
+
+    // Calculate average saturation around the peak hue
+    let satSum = 0;
+    let satCount = 0;
+    for (const r of regions) {
+      const data = ctx.getImageData(r.x, r.y, r.w, r.h).data;
+      for (let i = 0; i < data.length; i += 16) {
+        const hsv = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+        if (Math.abs(hsv.h - peakHue) < 10 || Math.abs(hsv.h - peakHue) > 170) {
+          satSum += hsv.s;
+          satCount++;
+        }
+      }
+    }
+    const avgSat = satCount > 0 ? Math.round(satSum / satCount) : 0;
+
+    // Detect reflective surface (high brightness variance = shimmer/refractor)
+    const meanBright = brightnessValues.reduce((a, b) => a + b, 0) / brightnessValues.length;
+    const variance = brightnessValues.reduce((a, b) => a + (b - meanBright) ** 2, 0) / brightnessValues.length;
+    const isReflective = Math.sqrt(variance) > 25;
+
+    const name = hueToColorName(peakHue);
+
+    return { name, hue: peakHue, saturation: avgSat, isReflective };
+  } catch (err) {
+    console.warn('[AI] Color analysis failed:', err.message);
+    return null;
+  }
+}
+
+/** Convert RGB (0-255) to HSV where H=0-179, S=0-100, V=0-100 */
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = Math.round(h * 30); // Convert to 0-179 range
+    if (h < 0) h += 180;
+  }
+
+  const s = max === 0 ? 0 : Math.round((d / max) * 100);
+  const v = Math.round(max * 100);
+
+  return { h, s, v };
+}
+
+/** Map HSV hue (0-179) to a human-readable color name */
+function hueToColorName(hue) {
+  // These ranges match how card collectors describe parallel colors
+  if (hue < 8 || hue >= 170) return 'red';
+  if (hue < 20) return 'orange';
+  if (hue < 33) return 'gold/yellow';
+  if (hue < 48) return 'yellow-green';
+  if (hue < 78) return 'green';
+  if (hue < 95) return 'teal';
+  if (hue < 130) return 'blue';
+  if (hue < 145) return 'blue-purple';
+  if (hue < 162) return 'purple';
+  if (hue < 170) return 'pink/magenta';
+  return 'red';
 }
 
 function normalizeCardData(cardData) {
