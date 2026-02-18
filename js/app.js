@@ -337,8 +337,9 @@ async function handleIdentifyNow() {
   let aiData = {};
   try {
     aiData = await identifyCard(
-      stagedFront.fullBase64,
-      stagedBack ? stagedBack.fullBase64 : null
+      stagedFront.apiBase64,
+      stagedBack ? stagedBack.apiBase64 : null,
+      (status) => showLoading(status)
     );
   } catch (aiErr) {
     hideLoading();
@@ -347,6 +348,11 @@ async function handleIdentifyNow() {
   }
 
   hideLoading();
+
+  if (aiData._fallback) {
+    toast('Haiku struggled — used Sonnet for better accuracy', 'info', 3000);
+    delete aiData._fallback;
+  }
 
   const defaults = await getDefaults();
 
@@ -1786,8 +1792,9 @@ async function handleIdentifyAll() {
       renderScanQueue();
 
       try {
-        const backBase64 = item.backPhoto ? item.backPhoto.fullBase64 : null;
-        const aiData = await identifyCard(item.photo.fullBase64, backBase64);
+        const backBase64 = item.backPhoto ? item.backPhoto.apiBase64 : null;
+        const aiData = await identifyCard(item.photo.apiBase64, backBase64,
+          (status) => { btn.textContent = status; });
 
         const card = createCard({
           mode: currentMode,

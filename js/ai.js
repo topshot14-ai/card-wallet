@@ -4,6 +4,8 @@ import { getSetting } from './db.js';
 import { stripDataUri } from './camera.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
+const FALLBACK_MODEL = 'claude-sonnet-4-6';
+const HAIKU_MODEL_PREFIX = 'claude-haiku';
 
 const SYSTEM_PROMPT = `You are an elite sports trading card identification expert with perfect vision. You have encyclopedic knowledge of every major card release from the 1950s to present day across all sports. Your identifications are used for pricing and listing, so accuracy is critical.
 
@@ -54,11 +56,7 @@ const SYSTEM_PROMPT = `You are an elite sports trading card identification exper
 **graded/gradeCompany/gradeValue**: Only if the card is in a grading slab (PSA, BGS, SGC, CGC). Read the grade from the label.
 
 ## Output Format
-Think through your analysis inside <thinking> tags, then output the JSON object.
-
-<thinking>
-[Read all text, reason about identification here]
-</thinking>
+Output ONLY the JSON object — no commentary, no code fences.
 
 {
   "sport": "",
@@ -82,12 +80,22 @@ Think through your analysis inside <thinking> tags, then output the JSON object.
 - Read printed text as your PRIMARY source; visual appearance is only secondary confirmation
 - The back of the card is your most reliable source for year, brand, set name, and card number`;
 
+/** Check if AI result is low-confidence (missing critical fields) */
+function isLowConfidence(cardData) {
+  if (!cardData.player || !cardData.player.trim()) return true;
+  // If player is present but both brand and setName are missing, still suspicious
+  if ((!cardData.brand || !cardData.brand.trim()) && (!cardData.setName || !cardData.setName.trim())) return true;
+  return false;
+}
+
 /**
  * Identify a card from front (required) and back (optional) images.
+ * When using Haiku, auto-falls back to Sonnet if the result looks incomplete.
  * @param {string} frontBase64 - data URI for front image
  * @param {string|null} backBase64 - data URI for back image (optional)
+ * @param {function|null} onStatusChange - callback for status updates (e.g. "Retrying with Sonnet...")
  */
-export async function identifyCard(frontBase64, backBase64 = null) {
+export async function identifyCard(frontBase64, backBase64 = null, onStatusChange = null) {
   let apiKey = await getSetting('apiKey');
   // Fall back to localStorage if IndexedDB lost the key
   if (!apiKey) {
@@ -97,7 +105,28 @@ export async function identifyCard(frontBase64, backBase64 = null) {
     throw new Error('API key not set. Please add your Claude API key in Settings.');
   }
 
-  const model = await getSetting('model') || 'claude-sonnet-4-5-20250929';
+  const model = await getSetting('model') || 'claude-haiku-4-5-20251001';
+
+  const cardData = await callVisionAPI(apiKey, model, frontBase64, backBase64);
+
+  // Auto-fallback: if using Haiku and result looks incomplete, retry with Sonnet
+  if (model.startsWith(HAIKU_MODEL_PREFIX) && isLowConfidence(cardData)) {
+    if (onStatusChange) onStatusChange('Retrying with Sonnet for better accuracy...');
+    try {
+      const fallbackData = await callVisionAPI(apiKey, FALLBACK_MODEL, frontBase64, backBase64);
+      fallbackData._fallback = true;
+      return fallbackData;
+    } catch {
+      // If fallback fails, return the original Haiku result
+      return cardData;
+    }
+  }
+
+  return cardData;
+}
+
+/** Core API call — used by identifyCard and its fallback */
+async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
   const frontContent = stripDataUri(frontBase64);
 
   const contentBlocks = [];
@@ -125,14 +154,14 @@ Step-by-step:
 1. Read ALL text on the BACK of the card first — find the copyright year, brand name, full product/set name, and card number. This is your most reliable source.
 2. Read ALL text on the FRONT — player name, team, any set logo, parallel name, insert name, RC logo, serial numbering.
 3. Cross-reference front and back to confirm the set name, year, and parallel.
-4. Think through your identification in <thinking> tags, then output the JSON object.`
+4. Output ONLY the JSON.`
     : `Identify this sports trading card from the front image.
 
 Step-by-step:
 1. Read ALL visible text — player name, team, brand logo, set name/logo, card number (if on front), any parallel name printed on the card, RC designation, serial numbering.
 2. Look for visual cues: brand logo style, card design elements, holographic/refractor patterns.
 3. Note: without the back, some fields (exact year, card number, set name) may be uncertain — use empty string rather than guessing.
-4. Think through your identification in <thinking> tags, then output the JSON object.`;
+4. Output ONLY the JSON.`;
 
   const MAX_RETRIES = 2;
   let lastError = null;
@@ -149,7 +178,7 @@ Step-by-step:
         },
         body: JSON.stringify({
           model,
-          max_tokens: 4096,
+          max_tokens: 1024,
           temperature: 0,
           system: SYSTEM_PROMPT,
           messages: [

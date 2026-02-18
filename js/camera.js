@@ -1,8 +1,10 @@
 // Photo capture, resize, thumbnail generation, base64 export
 
 const MAX_DIMENSION = 1568;
+const API_DIMENSION = 1024;
 const THUMB_SIZE = 200;
 const JPEG_QUALITY = 0.92;
+const API_QUALITY = 0.80;
 const THUMB_QUALITY = 0.7;
 
 /**
@@ -12,9 +14,11 @@ const THUMB_QUALITY = 0.7;
 export async function processPhoto(file) {
   const img = await loadImage(file);
   const { canvas: fullCanvas } = resizeToFit(img, MAX_DIMENSION);
+  const { canvas: apiCanvas } = resizeToFit(img, API_DIMENSION);
   const { canvas: thumbCanvas } = resizeToFit(img, THUMB_SIZE);
 
   const fullBase64 = fullCanvas.toDataURL('image/jpeg', JPEG_QUALITY);
+  const apiBase64 = apiCanvas.toDataURL('image/jpeg', API_QUALITY);
   const thumbBase64 = thumbCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
 
   const imageBlob = await canvasToBlob(fullCanvas, 'image/jpeg', JPEG_QUALITY);
@@ -25,7 +29,8 @@ export async function processPhoto(file) {
   const thumbBlobBase64 = await blobToBase64(thumbBlob);
 
   return {
-    fullBase64,          // data:image/jpeg;base64,... for API
+    fullBase64,          // data:image/jpeg;base64,... for storage
+    apiBase64,           // smaller image for AI identification
     thumbnailBase64: thumbBase64, // for display
     imageBlob: imageBlobBase64,   // for IndexedDB
     imageThumbnail: thumbBlobBase64 // for IndexedDB
