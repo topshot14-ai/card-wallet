@@ -157,9 +157,14 @@ async function callVisionAPI(apiKey, model, frontBase64, backBase64) {
     });
   }
 
-  const colorHint = colorInfo
-    ? `\n\nCOLOR ANALYSIS (advisory hint — may be imprecise on holographic cards): The sampled dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). ${colorInfo.isReflective ? 'High brightness variance detected — likely a refractor/shimmer/silver surface.' : ''} Use this as a HINT, but if the card's OUTER BORDER clearly looks a different color to you, trust your visual assessment over this measurement. Holographic/prismatic cards have multiple colors (reflections, inner frame lines) that can skew the measurement. The OUTER BORDER color is what determines the parallel name. For Donruss Optic: purple outer border = Purple Shock, blue outer border = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue.`
-    : '';
+  let colorHint = '';
+  if (colorInfo && colorInfo.isReflective) {
+    // Holographic/prismatic cards produce unreliable color readings — don't
+    // send a color name that could anchor the AI to the wrong parallel.
+    colorHint = `\n\nThis card has a holographic/prismatic/refractor surface. To determine the parallel, carefully examine the OUTER BORDER color of the card (the wide colored frame around the entire card edge). IGNORE inner frame lines, holographic reflections, and prismatic shimmer — only the outermost border color matters. For Donruss Optic: purple border = Purple Shock, blue border = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue.`;
+  } else if (colorInfo) {
+    colorHint = `\n\nCOLOR ANALYSIS of the card border: The dominant color is ${colorInfo.name} (HSV hue ${colorInfo.hue}°, saturation ${colorInfo.saturation}%). Use this to help determine the parallel name. For Donruss Optic: purple = Purple Shock, blue = Blue Velocity/Hyper Blue. For Prizm/Select: purple = Purple, blue = Blue. If this color doesn't match what you see on the outer border, trust your eyes.`;
+  }
 
   const promptText = backBase64
     ? `Identify this sports trading card using both images above.${colorHint}
