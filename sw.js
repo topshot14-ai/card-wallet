@@ -1,5 +1,5 @@
 // Service Worker for Card Wallet PWA
-const CACHE_NAME = 'card-wallet-v5.10.2';
+const CACHE_NAME = 'card-wallet-v5.10.3';
 const ASSETS = [
   './',
   './index.html',
@@ -24,10 +24,17 @@ const ASSETS = [
   './manifest.json'
 ];
 
-// Cache app shell on install
+// Cache app shell on install — use cache:'reload' to bypass HTTP cache
+// and ensure fresh files when the service worker version changes
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        ASSETS.map((url) =>
+          fetch(url, { cache: 'reload' }).then((res) => cache.put(url, res))
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
