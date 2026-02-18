@@ -300,11 +300,10 @@ function parseCardJson(text) {
 /**
  * Analyze dominant colors in the card's border/frame region using CIELAB.
  *
- * CIELAB is perceptually uniform — blue and purple are cleanly separated
- * by the a* axis (blue has a* near 0, purple has a* > +15). This avoids
- * the HSV hue ambiguity that made purple/blue indistinguishable.
- *
- * Pipeline: downsample → convert to LAB → filter highlights/grays → median → classify
+ * Uses edge-scanning: scans inward from each image edge, skips non-chromatic
+ * pixels (white paper/gray desk), and samples only the FIRST chromatic pixels
+ * found — which are the card's outermost border. This avoids contamination
+ * from the card's inner frame, artwork, and holographic reflections.
  *
  * Returns { name, confidence, lab: {L,a,b}, isReflective } or null.
  */
@@ -317,63 +316,100 @@ async function analyzeCardColors(base64DataUri) {
       i.src = base64DataUri;
     });
 
+    // Downsample to ~400px for fast processing while keeping border detail
+    const ANALYZE_SIZE = 400;
+    const scale = Math.min(ANALYZE_SIZE / img.width, ANALYZE_SIZE / img.height, 1);
+    const sw = Math.round(img.width * scale);
+    const sh = Math.round(img.height * scale);
+
     const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
+    canvas.width = sw;
+    canvas.height = sh;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, 0, 0, sw, sh);
 
-    const w = img.width;
-    const h = img.height;
+    const imageData = ctx.getImageData(0, 0, sw, sh);
+    const data = imageData.data;
 
-    // Sample a band from 5-25% inward from each edge. Skipping the outer 5%
-    // avoids background pixels. The 5-25% range lands on the card border.
-    const innerPct = 0.05;
-    const outerPct = 0.25;
-    const ix = Math.round(w * innerPct);
-    const iy = Math.round(h * innerPct);
-    const ox = Math.round(w * outerPct);
-    const oy = Math.round(h * outerPct);
+    // Helper: get LAB at (x, y)
+    const getLabAt = (x, y) => {
+      const idx = (y * sw + x) * 4;
+      return rgbToLab(data[idx], data[idx + 1], data[idx + 2]);
+    };
 
-    // Downsample each border strip to ~20px wide for noise reduction.
-    // Bilinear interpolation naturally averages out holographic streaks.
-    const STRIP_SIZE = 20;
-    const strips = [
-      { x: ix, y: iy, w: w - ix * 2, h: oy - iy },         // top
-      { x: ix, y: h - oy, w: w - ix * 2, h: oy - iy },     // bottom
-      { x: ix, y: oy, w: ox - ix, h: h - oy * 2 },          // left
-      { x: w - ox, y: oy, w: ox - ix, h: h - oy * 2 }       // right
-    ];
-
-    const labPixels = [];
+    const CHROMA_THRESH = 15;  // Minimum chroma to be "colored"
+    const SAMPLE_DEPTH = 3;    // Pixels to sample after finding border edge
+    const NUM_LINES = 14;      // Scan lines per edge
+    const borderLabPixels = [];
     const brightnessValues = [];
-    const tmpCanvas = document.createElement('canvas');
-    const tmpCtx = tmpCanvas.getContext('2d');
 
-    for (const s of strips) {
-      if (s.w < 1 || s.h < 1) continue;
-      // Downsample strip to STRIP_SIZE x STRIP_SIZE
-      tmpCanvas.width = STRIP_SIZE;
-      tmpCanvas.height = STRIP_SIZE;
-      tmpCtx.drawImage(canvas, s.x, s.y, s.w, s.h, 0, 0, STRIP_SIZE, STRIP_SIZE);
-      const data = tmpCtx.getImageData(0, 0, STRIP_SIZE, STRIP_SIZE).data;
+    // Collect brightness for reflectivity detection (sample every 8th pixel)
+    for (let i = 0; i < data.length; i += 32) {
+      const lab = rgbToLab(data[i], data[i + 1], data[i + 2]);
+      brightnessValues.push(lab.L);
+    }
 
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        const lab = rgbToLab(r, g, b);
+    // Scan from LEFT edge (rightward) at multiple Y positions
+    for (let i = 0; i < NUM_LINES; i++) {
+      const y = Math.round(sh * (0.12 + i * 0.76 / NUM_LINES));
+      for (let x = 0; x < sw * 0.4; x++) {
+        const lab = getLabAt(x, y);
         const chroma = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
-
-        brightnessValues.push(lab.L);
-
-        // Luminance gate: skip specular highlights (L>85) and deep shadows (L<20)
-        // Chroma gate: skip grays/whites (C<12)
-        if (lab.L >= 20 && lab.L <= 85 && chroma >= 12) {
-          labPixels.push(lab);
+        if (chroma > CHROMA_THRESH && lab.L > 10 && lab.L < 90) {
+          for (let dx = 0; dx < SAMPLE_DEPTH && x + dx < sw; dx++) {
+            borderLabPixels.push(getLabAt(x + dx, y));
+          }
+          break;
         }
       }
     }
 
-    if (labPixels.length < 20) return null; // Not enough chromatic pixels
+    // Scan from RIGHT edge (leftward)
+    for (let i = 0; i < NUM_LINES; i++) {
+      const y = Math.round(sh * (0.12 + i * 0.76 / NUM_LINES));
+      for (let x = sw - 1; x > sw * 0.6; x--) {
+        const lab = getLabAt(x, y);
+        const chroma = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+        if (chroma > CHROMA_THRESH && lab.L > 10 && lab.L < 90) {
+          for (let dx = 0; dx < SAMPLE_DEPTH && x - dx >= 0; dx++) {
+            borderLabPixels.push(getLabAt(x - dx, y));
+          }
+          break;
+        }
+      }
+    }
+
+    // Scan from TOP edge (downward)
+    for (let i = 0; i < NUM_LINES; i++) {
+      const x = Math.round(sw * (0.12 + i * 0.76 / NUM_LINES));
+      for (let y = 0; y < sh * 0.4; y++) {
+        const lab = getLabAt(x, y);
+        const chroma = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+        if (chroma > CHROMA_THRESH && lab.L > 10 && lab.L < 90) {
+          for (let dy = 0; dy < SAMPLE_DEPTH && y + dy < sh; dy++) {
+            borderLabPixels.push(getLabAt(x, y + dy));
+          }
+          break;
+        }
+      }
+    }
+
+    // Scan from BOTTOM edge (upward)
+    for (let i = 0; i < NUM_LINES; i++) {
+      const x = Math.round(sw * (0.12 + i * 0.76 / NUM_LINES));
+      for (let y = sh - 1; y > sh * 0.6; y--) {
+        const lab = getLabAt(x, y);
+        const chroma = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+        if (chroma > CHROMA_THRESH && lab.L > 10 && lab.L < 90) {
+          for (let dy = 0; dy < SAMPLE_DEPTH && y - dy >= 0; dy++) {
+            borderLabPixels.push(getLabAt(x, y - dy));
+          }
+          break;
+        }
+      }
+    }
+
+    if (borderLabPixels.length < 15) return null;
 
     // Detect reflective surface (high brightness variance = shimmer/refractor)
     const meanL = brightnessValues.reduce((a, b) => a + b, 0) / brightnessValues.length;
@@ -381,7 +417,7 @@ async function analyzeCardColors(base64DataUri) {
     const isReflective = Math.sqrt(variance) > 18;
 
     // Compute median LAB — robust against outlier reflections
-    const median = medianLab(labPixels);
+    const median = medianLab(borderLabPixels);
 
     // Classify against reference colors
     const { name, confidence } = classifyLabColor(median);
@@ -433,15 +469,17 @@ function rgbToLab(r, g, b) {
  * Uses Euclidean distance in LAB space (perceptually uniform).
  */
 function classifyLabColor(lab) {
-  // Reference LAB values for common card parallel colors
+  // Reference LAB values for common card parallel colors.
+  // Calibrated against real card photos. Key: blue has NEGATIVE a* (no red),
+  // purple has POSITIVE a* (red mixed in). This is the primary discriminator.
   const references = [
     { name: 'red',         L: 45, a: 55,  b: 30  },
     { name: 'orange',      L: 65, a: 35,  b: 55  },
     { name: 'gold/yellow', L: 80, a: 0,   b: 70  },
     { name: 'green',       L: 50, a: -40, b: 30  },
     { name: 'teal',        L: 50, a: -25, b: -10 },
-    { name: 'blue',        L: 35, a: 5,   b: -45 },
-    { name: 'purple',      L: 30, a: 30,  b: -40 },
+    { name: 'blue',        L: 40, a: -8,  b: -45 },
+    { name: 'purple',      L: 25, a: 15,  b: -35 },
     { name: 'pink/magenta',L: 55, a: 50,  b: -10 },
     { name: 'silver',      L: 70, a: 0,   b: -3  },
     { name: 'black',       L: 15, a: 0,   b: 0   },
