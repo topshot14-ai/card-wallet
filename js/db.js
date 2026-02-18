@@ -165,6 +165,44 @@ export async function getAllSettings() {
   return settings;
 }
 
+// ===== Active Listings =====
+
+/** Get cards that are actively listed on eBay (status=listed + has ebayListingId) */
+export async function getActiveListings() {
+  const store = await tx(CARDS_STORE);
+  const index = store.index('status');
+  const cards = await promisifyRequest(index.getAll('listed'));
+  return cards.filter(c => c.ebayListingId && c.status !== 'deleted');
+}
+
+/**
+ * One-time migration: move non-active listing cards to collection.
+ * Cards with status='listed' stay as mode='listing'.
+ * All others (pending, sold, unsold, exported) move to mode='collection'.
+ */
+export async function migrateListingQueueToCollection() {
+  const migrated = await getSetting('listingQueueMigrated');
+  if (migrated) return;
+
+  const store = await tx(CARDS_STORE);
+  const index = store.index('mode');
+  const listingCards = await promisifyRequest(index.getAll('listing'));
+
+  let count = 0;
+  for (const card of listingCards) {
+    if (card.status === 'listed' || card.status === 'deleted') continue;
+    card.mode = 'collection';
+    card.lastModified = new Date().toISOString();
+    await saveCardLocal(card);
+    count++;
+  }
+
+  await setSetting('listingQueueMigrated', true);
+  if (count > 0) {
+    console.log(`[Migration] Moved ${count} non-active listing cards to collection`);
+  }
+}
+
 // ===== Data Export / Import =====
 
 export async function exportAllData() {

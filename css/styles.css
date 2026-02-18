@@ -609,25 +609,7 @@ body {
   margin-top: 12px;
 }
 
-/* ===== Listings View ===== */
-.listings-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--gray-200);
-  margin-bottom: 12px;
-}
-
-.select-all-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--gray-600);
-  cursor: pointer;
-}
-
+/* ===== Active Listings View ===== */
 .badge {
   font-size: 12px;
   font-weight: 600;
@@ -637,13 +619,35 @@ body {
   border-radius: 10px;
 }
 
-.listings-list {
+.listings-refresh-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.listings-refresh-status .offline {
+  color: var(--warning);
+}
+
+.auto-refresh-badge {
+  font-size: 10px;
+  background: var(--gray-100);
+  color: var(--gray-500);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.active-listings-container {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.listing-item {
+.active-listing-card {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -651,28 +655,26 @@ body {
   background: white;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  cursor: pointer;
 }
 
-.listing-item input[type="checkbox"] {
+.active-listing-thumb {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
 }
 
-.listing-item img {
+.active-listing-thumb img {
   width: 56px;
   height: 56px;
   object-fit: cover;
   border-radius: 4px;
-  flex-shrink: 0;
 }
 
-.listing-info {
+.active-listing-info {
   flex: 1;
   min-width: 0;
 }
 
-.listing-info .title {
+.active-listing-title {
   font-weight: 500;
   font-size: 14px;
   display: -webkit-box;
@@ -681,65 +683,90 @@ body {
   overflow: hidden;
 }
 
-.listing-info .meta {
+.active-listing-meta {
   font-size: 12px;
   color: var(--gray-500);
   margin-top: 2px;
 }
 
-.listing-price {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--success);
-  flex-shrink: 0;
+.active-listing-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
 }
 
-.listing-actions {
+.listing-format-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.listing-format-badge.auction {
+  background: var(--warning-light);
+  color: #92400e;
+}
+
+.listing-format-badge.fixed {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.listing-bid-count {
+  font-size: 11px;
+  color: var(--gray-500);
+}
+
+.listing-countdown {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-600);
+  font-variant-numeric: tabular-nums;
+}
+
+.listing-countdown.urgent {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.listing-countdown.ended {
+  color: var(--gray-400);
+}
+
+.active-listing-price-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex-shrink: 0;
   align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-.listing-text-btn {
-  background: var(--gray-700);
-  border: 1px solid var(--gray-600);
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-  color: var(--gray-200);
-  font-size: 12px;
-  white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
+.listing-live-price {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--success);
 }
 
-.listing-text-btn:hover {
-  background: var(--gray-600);
-  border-color: var(--gray-500);
+.listing-live-price.bid-price {
+  color: var(--primary);
 }
 
-.listing-ebay-btn {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
+.listing-live-price.local {
+  color: var(--gray-500);
+  font-size: 14px;
 }
 
-.listing-ebay-btn:hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+.listing-ebay-link {
+  font-size: 14px;
+  text-decoration: none;
+  opacity: 0.6;
+  transition: opacity 0.15s;
 }
 
-.listing-delete-btn {
-  color: var(--danger);
-  border-color: transparent;
-  background: transparent;
-}
-
-.listing-delete-btn:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: var(--danger);
+.listing-ebay-link:hover {
+  opacity: 1;
 }
 
 /* ===== Swipe Delete ===== */
@@ -1188,32 +1215,7 @@ body {
   color: var(--gray-600);
 }
 
-/* Listings status filters */
-.listings-filters {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-}
-
-/* Inline price edit */
-.inline-price-input {
-  width: 70px;
-  padding: 4px 6px;
-  border: 2px solid var(--primary);
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--success);
-  text-align: right;
-  outline: none;
-}
-
-.listing-price {
-  cursor: pointer;
-}
+/* (Old listing filters/inline edit removed — replaced by active listings tracker) */
 
 /* Success button */
 .btn-success {
@@ -1503,7 +1505,7 @@ body {
 }
 
 [data-theme="dark"] .settings-section,
-[data-theme="dark"] .listing-item,
+[data-theme="dark"] .active-listing-card,
 [data-theme="dark"] .recent-scan-item,
 [data-theme="dark"] .card-tile,
 [data-theme="dark"] .modal {
@@ -1627,9 +1629,44 @@ body {
   border-top-color: #374151;
 }
 
-/* Dark mode: listings-toolbar border */
-[data-theme="dark"] .listings-toolbar {
-  border-bottom-color: #374151;
+/* Dark mode: active listing styles */
+[data-theme="dark"] .listings-refresh-status {
+  color: #9ca3af;
+}
+
+[data-theme="dark"] .auto-refresh-badge {
+  background: #374151;
+  color: #9ca3af;
+}
+
+[data-theme="dark"] .listing-format-badge.auction {
+  background: #3b2f14;
+  color: #fbbf24;
+}
+
+[data-theme="dark"] .listing-format-badge.fixed {
+  background: #1e3a5f;
+  color: #60a5fa;
+}
+
+[data-theme="dark"] .listing-live-price {
+  color: #4ade80;
+}
+
+[data-theme="dark"] .listing-live-price.bid-price {
+  color: #60a5fa;
+}
+
+[data-theme="dark"] .listing-live-price.local {
+  color: #9ca3af;
+}
+
+[data-theme="dark"] .listing-countdown.urgent {
+  color: #f87171;
+}
+
+[data-theme="dark"] .active-listing-meta {
+  color: #9ca3af;
 }
 
 /* Dark mode: binder view */
@@ -1663,10 +1700,7 @@ body {
   border-bottom-color: #374151;
 }
 
-/* Dark mode: listing price */
-[data-theme="dark"] .listing-price {
-  color: #4ade80;
-}
+/* (Old listing-price dark mode removed — see listing-live-price above) */
 
 /* ===== Skip Navigation ===== */
 .skip-nav {
@@ -1875,10 +1909,7 @@ a:focus-visible {
   background: #111827;
 }
 
-/* ===== Listings search spacing ===== */
-#listings-search {
-  margin-bottom: 10px;
-}
+/* (Old listings search spacing removed) */
 
 /* ===== Lazy load sentinel ===== */
 .load-more-sentinel {
@@ -1897,9 +1928,7 @@ a:focus-visible {
   color: #9ca3af;
 }
 
-[data-theme="dark"] .listing-info .meta {
-  color: #9ca3af;
-}
+/* (Old listing-info .meta dark mode removed — see active-listing-meta above) */
 
 [data-theme="dark"] .card-tile-info .detail {
   color: #9ca3af;

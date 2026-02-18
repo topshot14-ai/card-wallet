@@ -97,8 +97,8 @@
 
       <!-- Mode Toggle -->
       <div class="mode-toggle">
-        <button id="mode-listing" class="mode-btn active" data-mode="listing">List It</button>
-        <button id="mode-collection" class="mode-btn" data-mode="collection">Collect It</button>
+        <button id="mode-listing" class="mode-btn active" data-mode="listing">Quick List</button>
+        <button id="mode-collection" class="mode-btn" data-mode="collection">Collect</button>
       </div>
 
       <!-- Manual Entry -->
@@ -373,35 +373,22 @@
     </div>
   </div>
 
-  <!-- ===== LISTINGS VIEW ===== -->
-  <div id="view-listings" class="view" role="main" aria-label="Listings">
+  <!-- ===== ACTIVE LISTINGS VIEW ===== -->
+  <div id="view-listings" class="view" role="main" aria-label="Active Listings">
     <header class="view-header">
-      <h1>Listings</h1>
-      <button id="btn-export-csv" class="header-btn primary" aria-label="Export listings as CSV">Export CSV</button>
+      <h1>Active Listings</h1>
+      <button id="btn-refresh-listings" class="header-btn" aria-label="Refresh listings">&#x21bb;</button>
     </header>
     <div class="view-content">
-      <input type="search" id="listings-search" placeholder="Search listings..." class="search-input" aria-label="Search listings">
-      <div class="listings-filters" id="listings-status-filters">
-        <button class="pill active" data-status="all" data-label="All">All</button>
-        <button class="pill" data-status="pending" data-label="Pending">Pending</button>
-        <button class="pill" data-status="listed" data-label="Listed">Listed</button>
-        <button class="pill" data-status="sold" data-label="Sold">Sold</button>
-        <button class="pill" data-status="unsold" data-label="Unsold">Unsold</button>
+      <div class="listings-refresh-status" id="listings-refresh-status">
+        <span id="listings-last-refreshed">Not yet refreshed</span>
+        <span id="listings-auto-badge" class="auto-refresh-badge">Auto-refresh: 5min</span>
       </div>
-      <div class="listings-toolbar">
-        <label class="select-all-label">
-          <input type="checkbox" id="listings-select-all"> Select All
-        </label>
-        <span id="listings-count" class="badge">0</span>
-        <button id="btn-ebay-batch" class="btn btn-primary btn-sm hidden">Bulk List on eBay</button>
-        <button id="btn-move-to-collection" class="btn btn-secondary btn-sm hidden">To Collection</button>
-        <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden">Delete</button>
-      </div>
-      <div id="listings-list" class="listings-list">
+      <div id="listings-list" class="active-listings-container">
         <div class="empty-state-rich">
           <div class="empty-state-icon">&#128179;</div>
-          <div class="empty-state-title">No listings yet</div>
-          <div class="empty-state-desc">Scan cards in "List It" mode to start building your listing queue.</div>
+          <div class="empty-state-title">No active listings</div>
+          <div class="empty-state-desc">Use Quick List mode to list cards on eBay.</div>
         </div>
       </div>
     </div>
@@ -447,7 +434,7 @@
         <div class="empty-state-rich" style="grid-column:1/-1">
           <div class="empty-state-icon">&#127183;</div>
           <div class="empty-state-title">Your collection is empty</div>
-          <div class="empty-state-desc">Scan cards in "Collect It" mode to start building your collection.</div>
+          <div class="empty-state-desc">Scan cards in "Collect" mode to start building your collection.</div>
         </div>
       </div>
     </div>
@@ -640,7 +627,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v4.8.4</p>
+      <p class="app-version">Card Wallet v4.9.0</p>
     </div>
   </div>
 
@@ -659,12 +646,12 @@
       </svg>
       <span>Dashboard</span>
     </button>
-    <button class="tab" data-view="listings" aria-label="View listings">
+    <button class="tab" data-view="listings" aria-label="Active listings">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
         <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
       </svg>
-      <span>Listings</span>
+      <span>Active</span>
     </button>
     <button class="tab" data-view="collection" aria-label="View collection">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">

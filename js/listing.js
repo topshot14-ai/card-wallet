@@ -1,519 +1,266 @@
-// Listing queue management and eBay CSV export
+// Active eBay Listings Tracker — shows live data for cards listed on eBay
 
 import * as db from './db.js';
-import { toast, confirm, showView, $, escapeHtml } from './ui.js';
+import { toast, $, escapeHtml } from './ui.js';
 import { cardDisplayName, cardDetailLine } from './card-model.js';
-import { listCardOnEbay } from './ebay-listing.js';
-// Note: db.softDeleteCard and db.softDeleteCards accessed via db.* namespace
 
-let listings = [];
-let selectedIds = new Set();
-let statusFilter = 'all'; // 'all', 'pending', 'listed', 'sold', 'unsold'
-let listingsSearchQuery = '';
-const LISTINGS_PAGE_SIZE = 50;
-let listingsShown = LISTINGS_PAGE_SIZE;
+let activeCards = [];
+let liveData = new Map(); // ebayListingId → eBay Browse API data
+let autoRefreshTimer = null;
+let countdownTimer = null;
+let lastFetchedAt = null;
 
 export async function initListings() {
-  await refreshListings();
+  // Run one-time migration from listing queue to collection
+  await db.migrateListingQueueToCollection();
 
-  // Static event listeners (once)
-  $('#btn-export-csv').addEventListener('click', exportCSV);
-  $('#listings-select-all').addEventListener('click', toggleSelectAll);
-  $('#btn-delete-selected').addEventListener('click', deleteSelected);
-  $('#btn-move-to-collection').addEventListener('click', moveSelectedToCollection);
-
-  // Search input
-  const searchInput = document.getElementById('listings-search');
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      listingsSearchQuery = e.target.value.trim().toLowerCase();
-      render();
-    });
+  // Wire refresh button
+  const refreshBtn = $('#btn-refresh-listings');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => refreshListings());
   }
-
-  // Status filter pills — event delegation
-  const filterContainer = $('#listings-status-filters');
-  if (filterContainer) {
-    filterContainer.addEventListener('click', (e) => {
-      const pill = e.target.closest('.pill');
-      if (!pill) return;
-      filterContainer.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      statusFilter = pill.dataset.status;
-      render();
-    });
-  }
-
-  // Swipe to delete (mobile)
-  initSwipeToDelete();
 
   // Event delegation on listings container
   const container = $('#listings-list');
-  container.addEventListener('change', (e) => {
-    const cb = e.target.closest('.listing-checkbox');
-    if (!cb) return;
-    e.stopPropagation();
-    const id = cb.dataset.id;
-    if (cb.checked) {
-      selectedIds.add(id);
+  container.addEventListener('click', (e) => {
+    // View on eBay link
+    const ebayLink = e.target.closest('.listing-ebay-link');
+    if (ebayLink) return; // let the <a> handle it
+
+    // Click on listing card → open card detail
+    const card = e.target.closest('.active-listing-card');
+    if (card && card.dataset.id) {
+      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: card.dataset.id } }));
+    }
+  });
+
+  // Start/stop auto-refresh when listings tab becomes active/inactive
+  window.addEventListener('view-changed', (e) => {
+    if (e.detail?.view === 'view-listings') {
+      startAutoRefresh();
     } else {
-      selectedIds.delete(id);
-    }
-    updateBulkButtons();
-  });
-
-  container.addEventListener('click', async (e) => {
-    // List It button — launch eBay listing flow
-    const ebayBtn = e.target.closest('.listing-ebay-btn');
-    if (ebayBtn) {
-      e.stopPropagation();
-      const card = listings.find(c => c.id === ebayBtn.dataset.id);
-      if (card) {
-        await listCardOnEbay(card);
-        await refreshListings();
-      }
-      return;
-    }
-
-    // Move to Collection button
-    const moveBtn = e.target.closest('.listing-move-btn');
-    if (moveBtn) {
-      e.stopPropagation();
-      const card = listings.find(c => c.id === moveBtn.dataset.id);
-      if (card) {
-        card.mode = 'collection';
-        card.lastModified = new Date().toISOString();
-        await db.saveCard(card);
-        toast('Card moved to collection', 'success');
-        await refreshListings();
-        window.dispatchEvent(new CustomEvent('refresh-collection'));
-      }
-      return;
-    }
-
-    // Delete Card button (soft delete → trash)
-    const delBtn = e.target.closest('.listing-delete-btn');
-    if (delBtn) {
-      e.stopPropagation();
-      if (window.confirm('Are you sure you want to delete this card?')) {
-        await db.softDeleteCard(delBtn.dataset.id);
-        await refreshListings();
-        toast('Card deleted', 'success');
-      }
-      return;
-    }
-
-    // Inline price edit — click on price to edit
-    const priceEl = e.target.closest('.listing-price');
-    if (priceEl && !priceEl.querySelector('input')) {
-      e.stopPropagation();
-      startInlineEdit(priceEl);
-      return;
-    }
-
-    // Click on listing row — open card detail
-    const item = e.target.closest('.listing-item');
-    if (item && !e.target.closest('.listing-checkbox')) {
-      window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: item.dataset.id } }));
+      stopAutoRefresh();
     }
   });
+
+  await refreshListings();
 }
 
 export async function refreshListings() {
-  listings = await db.getCardsByMode('listing');
-  listings.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
-  selectedIds.clear();
-  listingsShown = LISTINGS_PAGE_SIZE;
+  activeCards = await db.getActiveListings();
+
   render();
+
+  // Fetch live data if we have active listings
+  if (activeCards.length > 0) {
+    await fetchLiveData();
+  }
 }
 
-function getFilteredListings() {
-  let filtered = listings;
-  if (statusFilter !== 'all') {
-    filtered = filtered.filter(c => c.status === statusFilter);
+async function fetchLiveData() {
+  const workerUrl = await db.getSetting('ebayWorkerUrl');
+  if (!workerUrl) return;
+
+  const ids = activeCards.map(c => c.ebayListingId).filter(Boolean);
+  if (ids.length === 0) return;
+
+  try {
+    const resp = await fetch(`${workerUrl}/active-listings?ids=${ids.join(',')}`);
+    if (!resp.ok) {
+      console.error('[Listings] Failed to fetch live data:', resp.status);
+      return;
+    }
+
+    const data = await resp.json();
+    lastFetchedAt = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+
+    // Update live data map and handle ended listings
+    const endedIds = [];
+    for (const listing of (data.listings || [])) {
+      if (listing.error && listing.status === 404) {
+        endedIds.push(listing.legacyItemId);
+        continue;
+      }
+      if (!listing.error && listing.legacyItemId) {
+        liveData.set(listing.legacyItemId, listing);
+      }
+    }
+
+    // Move ended listings to collection as unsold
+    for (const endedId of endedIds) {
+      const card = activeCards.find(c => c.ebayListingId === endedId);
+      if (card) {
+        card.status = 'unsold';
+        card.mode = 'collection';
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+      }
+    }
+
+    if (endedIds.length > 0) {
+      activeCards = activeCards.filter(c => !endedIds.includes(c.ebayListingId));
+      toast(`${endedIds.length} listing${endedIds.length > 1 ? 's' : ''} ended — moved to collection`, 'info');
+      window.dispatchEvent(new CustomEvent('refresh-collection'));
+    }
+
+    render();
+    startCountdownTimers();
+  } catch (err) {
+    console.error('[Listings] Fetch error:', err);
+    // Show offline state
+    renderRefreshStatus(true);
   }
-  if (listingsSearchQuery) {
-    filtered = filtered.filter(c => {
-      const searchable = [c.player, c.team, c.brand, c.setName, c.year, c.parallel, c.cardNumber, c.ebayTitle, c.notes]
-        .filter(Boolean).join(' ').toLowerCase();
-      return searchable.includes(listingsSearchQuery);
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshTimer = setInterval(() => {
+    if (activeCards.length > 0) {
+      fetchLiveData();
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+  stopCountdownTimers();
+}
+
+function startCountdownTimers() {
+  stopCountdownTimers();
+  countdownTimer = setInterval(() => {
+    document.querySelectorAll('.listing-countdown[data-end]').forEach(el => {
+      const end = new Date(el.dataset.end);
+      const now = new Date();
+      const diff = end - now;
+
+      if (diff <= 0) {
+        el.textContent = 'Ended';
+        el.classList.add('ended');
+        return;
+      }
+
+      el.textContent = formatCountdown(diff);
+      el.classList.toggle('urgent', diff < 3600000); // under 1 hour
     });
+  }, 1000);
+}
+
+function stopCountdownTimers() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
   }
-  return filtered;
+}
+
+function formatCountdown(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
+function renderRefreshStatus(offline = false) {
+  const statusEl = $('#listings-last-refreshed');
+  if (!statusEl) return;
+
+  if (offline) {
+    statusEl.textContent = 'Offline — showing local data';
+    statusEl.classList.add('offline');
+    return;
+  }
+
+  statusEl.classList.remove('offline');
+  if (lastFetchedAt) {
+    const time = lastFetchedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    statusEl.textContent = `Last refreshed: ${time}`;
+  }
 }
 
 function render() {
   const container = $('#listings-list');
-  const countBadge = $('#listings-count');
-  const selectAll = $('#listings-select-all');
 
-  const filtered = getFilteredListings();
-  countBadge.textContent = listings.length;
+  renderRefreshStatus();
 
-  // Update filter counts
-  updateFilterCounts();
-
-  if (filtered.length === 0) {
-    if (listings.length === 0) {
-      container.innerHTML = `<div class="empty-state-rich">
-        <div class="empty-state-icon">&#128179;</div>
-        <div class="empty-state-title">No listings yet</div>
-        <div class="empty-state-desc">Scan cards in "List It" mode to start building your listing queue.</div>
-      </div>`;
-    } else {
-      container.innerHTML = `<p class="empty-state">No listings match this filter.</p>`;
-    }
-    selectAll.checked = false;
-    updateBulkButtons();
+  if (activeCards.length === 0) {
+    container.innerHTML = `<div class="empty-state-rich">
+      <div class="empty-state-icon">&#128179;</div>
+      <div class="empty-state-title">No active listings</div>
+      <div class="empty-state-desc">Use Quick List mode to list cards on eBay.</div>
+    </div>`;
     return;
   }
 
-  const visible = filtered.slice(0, listingsShown);
+  container.innerHTML = activeCards.map(card => {
+    const live = liveData.get(card.ebayListingId);
+    const isAuction = live ? live.buyingOptions?.includes('AUCTION') : false;
+    const isBuyNow = live ? live.buyingOptions?.includes('FIXED_PRICE') : false;
 
-  container.innerHTML = visible.map(card => {
-    const statusBadge = getStatusBadge(card.status);
+    // Price display
+    let priceHtml = '';
+    if (live) {
+      if (isAuction && live.currentBidPrice) {
+        priceHtml = `<span class="listing-live-price bid-price">$${Number(live.currentBidPrice.value).toFixed(2)}</span>`;
+      } else if (live?.price) {
+        priceHtml = `<span class="listing-live-price">$${Number(live.price.value).toFixed(2)}</span>`;
+      }
+    } else if (card.startPrice) {
+      priceHtml = `<span class="listing-live-price local">$${Number(card.startPrice).toFixed(2)}</span>`;
+    }
+
+    // Format badge
+    let formatBadge = '';
+    if (live) {
+      if (isAuction) {
+        formatBadge = '<span class="listing-format-badge auction">Auction</span>';
+      } else if (isBuyNow) {
+        formatBadge = '<span class="listing-format-badge fixed">Buy It Now</span>';
+      }
+    }
+
+    // Bid count
+    const bidCount = live?.bidCount || 0;
+    const bidHtml = isAuction ? `<span class="listing-bid-count">${bidCount} bid${bidCount !== 1 ? 's' : ''}</span>` : '';
+
+    // Countdown
+    let countdownHtml = '';
+    if (live?.itemEndDate) {
+      const end = new Date(live.itemEndDate);
+      const diff = end - new Date();
+      const urgentClass = diff < 3600000 ? ' urgent' : '';
+      countdownHtml = `<span class="listing-countdown${urgentClass}" data-end="${live.itemEndDate}">${formatCountdown(Math.max(0, diff))}</span>`;
+    }
+
+    // eBay link
+    const ebayUrl = card.ebayListingUrl || (live?.itemWebUrl) || `https://www.ebay.com/itm/${card.ebayListingId}`;
+
     return `
-    <div class="listing-item" data-id="${card.id}">
-      <input type="checkbox" class="listing-checkbox" data-id="${card.id}" ${selectedIds.has(card.id) ? 'checked' : ''}>
-      ${card.imageThumbnail
-        ? `<img src="${card.imageThumbnail}" alt="Card" loading="lazy">`
-        : '<div class="no-image-placeholder">No img</div>'}
-      <div class="listing-info">
-        <div class="title">${escapeHtml(card.ebayTitle || cardDisplayName(card))}</div>
-        <div class="meta">${escapeHtml(cardDetailLine(card))}${statusBadge}</div>
+      <div class="active-listing-card" data-id="${card.id}">
+        <div class="active-listing-thumb">
+          ${card.imageThumbnail
+            ? `<img src="${card.imageThumbnail}" alt="Card" loading="lazy">`
+            : '<div class="no-image-placeholder">No img</div>'}
+        </div>
+        <div class="active-listing-info">
+          <div class="active-listing-title">${escapeHtml(card.ebayTitle || cardDisplayName(card))}</div>
+          <div class="active-listing-meta">${escapeHtml(cardDetailLine(card))}</div>
+          <div class="active-listing-badges">
+            ${formatBadge}${bidHtml}${countdownHtml}
+          </div>
+        </div>
+        <div class="active-listing-price-col">
+          ${priceHtml}
+          <a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener" class="listing-ebay-link" title="View on eBay">&#x1F517;</a>
+        </div>
       </div>
-      <div class="listing-price" data-id="${card.id}" title="Tap to edit">${card.startPrice ? '$' + Number(card.startPrice).toFixed(2) : ''}</div>
-      <div class="listing-actions">
-        ${card.status !== 'listed' && card.status !== 'sold' ? `<button class="listing-text-btn listing-ebay-btn" data-id="${card.id}">List It</button>` : ''}
-        <button class="listing-text-btn listing-move-btn" data-id="${card.id}">Move to Collection</button>
-        <button class="listing-text-btn listing-delete-btn" data-id="${card.id}">Delete Card</button>
-      </div>
-    </div>
-  `;
+    `;
   }).join('');
-
-  // Load more button
-  if (filtered.length > listingsShown) {
-    const remaining = filtered.length - listingsShown;
-    container.innerHTML += `<div class="load-more-sentinel"><button class="btn btn-secondary btn-sm" id="btn-listings-load-more">Show More (${remaining} remaining)</button></div>`;
-    document.getElementById('btn-listings-load-more').addEventListener('click', () => {
-      listingsShown += LISTINGS_PAGE_SIZE;
-      render();
-    });
-  }
-
-  updateBulkButtons();
 }
-
-function getStatusBadge(status) {
-  const badges = {
-    pending: '',
-    listed: ' <span class="status-badge status-listed">Listed</span>',
-    sold: ' <span class="status-badge status-sold">Sold</span>',
-    unsold: ' <span class="status-badge status-unsold">Unsold</span>',
-    exported: ' <span class="status-badge status-exported">Exported</span>',
-  };
-  return badges[status] || '';
-}
-
-function updateFilterCounts() {
-  const counts = { all: listings.length, pending: 0, listed: 0, sold: 0, unsold: 0 };
-  for (const card of listings) {
-    if (counts[card.status] !== undefined) counts[card.status]++;
-  }
-  const container = $('#listings-status-filters');
-  if (!container) return;
-  container.querySelectorAll('.pill').forEach(pill => {
-    const status = pill.dataset.status;
-    const count = counts[status];
-    const label = pill.dataset.label || status;
-    pill.textContent = count > 0 ? `${label} (${count})` : label;
-  });
-}
-
-function toggleSelectAll() {
-  const selectAll = $('#listings-select-all');
-  const filtered = getFilteredListings();
-  if (selectAll.checked) {
-    filtered.forEach(l => selectedIds.add(l.id));
-  } else {
-    selectedIds.clear();
-  }
-  render();
-}
-
-function updateBulkButtons() {
-  const deleteBtn = $('#btn-delete-selected');
-  const moveBtn = $('#btn-move-to-collection');
-  const ebayBatchBtn = $('#btn-ebay-batch');
-  if (selectedIds.size > 0) {
-    deleteBtn.classList.remove('hidden');
-    deleteBtn.textContent = `Delete (${selectedIds.size})`;
-    moveBtn.classList.remove('hidden');
-    if (ebayBatchBtn) {
-      const listableCount = listings.filter(c => selectedIds.has(c.id) && c.status !== 'listed' && c.status !== 'sold').length;
-      if (listableCount > 0) {
-        ebayBatchBtn.classList.remove('hidden');
-        ebayBatchBtn.textContent = `Bulk List on eBay (${listableCount})`;
-      } else {
-        ebayBatchBtn.classList.add('hidden');
-      }
-    }
-  } else {
-    deleteBtn.classList.add('hidden');
-    moveBtn.classList.add('hidden');
-    if (ebayBatchBtn) ebayBatchBtn.classList.add('hidden');
-  }
-}
-
-async function deleteSelected() {
-  const confirmed = await confirm('Delete Selected', `Move ${selectedIds.size} listing(s) to trash?`);
-  if (confirmed) {
-    const count = selectedIds.size;
-    await db.softDeleteCards([...selectedIds]);
-    await refreshListings();
-    toast(`${count} listing(s) moved to trash`, 'success');
-  }
-}
-
-async function moveSelectedToCollection() {
-  const count = selectedIds.size;
-  for (const id of selectedIds) {
-    const card = await db.getCard(id);
-    if (card) {
-      card.mode = 'collection';
-      card.lastModified = new Date().toISOString();
-      await db.saveCard(card);
-    }
-  }
-  await refreshListings();
-  toast(`${count} card(s) moved to collection`, 'success');
-  window.dispatchEvent(new CustomEvent('refresh-collection'));
-}
-
-// ===== Inline Price Edit =====
-
-function startInlineEdit(priceEl) {
-  const cardId = priceEl.dataset.id;
-  const card = listings.find(c => c.id === cardId);
-  if (!card) return;
-
-  const currentPrice = card.startPrice || 0.99;
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.step = '0.01';
-  input.value = currentPrice;
-  input.className = 'inline-price-input';
-  input.min = '0.01';
-
-  priceEl.textContent = '';
-  priceEl.appendChild(input);
-  input.focus();
-  input.select();
-
-  let cancelled = false;
-
-  const save = async () => {
-    if (cancelled) return;
-    const newPrice = parseFloat(input.value) || currentPrice;
-    card.startPrice = newPrice;
-    card.lastModified = new Date().toISOString();
-    await db.saveCard(card);
-    priceEl.textContent = '$' + Number(newPrice).toFixed(2);
-  };
-
-  input.addEventListener('blur', save);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') {
-      cancelled = true;
-      priceEl.textContent = '$' + Number(currentPrice).toFixed(2);
-      input.blur();
-    }
-  });
-}
-
-// ===== eBay CSV Export =====
-
-async function exportCSV() {
-  const cardsToExport = selectedIds.size > 0
-    ? listings.filter(c => selectedIds.has(c.id))
-    : listings;
-
-  if (cardsToExport.length === 0) {
-    toast('No listings to export', 'warning');
-    return;
-  }
-
-  const headers = [
-    'Action(SiteID=US|Country=US|Currency=USD|Version=1193)',
-    'Category',
-    'Title',
-    'ConditionID',
-    'C:Sport',
-    'C:Player/Athlete',
-    'C:Team',
-    'C:Manufacturer',
-    'C:Set',
-    'C:Season',
-    'C:Card Number',
-    'C:Parallel/Variety',
-    'C:Features',
-    'C:Graded',
-    'C:Professional Grader',
-    'C:Grade',
-    'Format',
-    'StartPrice',
-    'Duration',
-    'Description'
-  ];
-
-  const rows = cardsToExport.map(card => {
-    const conditionMap = {
-      'Near Mint or Better': '4000',
-      'Excellent': '5000',
-      'Very Good': '6000',
-      'Good': '7000',
-      'Fair': '7000',
-      'Poor': '7000'
-    };
-
-    const features = [];
-    if (card.attributes) features.push(...card.attributes);
-    if (card.subset && card.subset.toLowerCase() !== 'base') features.push(card.subset);
-
-    return [
-      'Draft',
-      '261328',
-      card.ebayTitle || '',
-      card.graded === 'Yes' ? '2750' : (conditionMap[card.condition] || '4000'),
-      card.sport || '',
-      card.player || '',
-      card.team || '',
-      card.brand || '',
-      card.setName || '',
-      card.year || '',
-      card.cardNumber || '',
-      card.parallel || '',
-      features.join(', '),
-      card.graded === 'Yes' ? 'Yes' : 'No',
-      card.gradeCompany || '',
-      card.gradeValue || '',
-      'Auction',
-      card.startPrice || '0.99',
-      '7',
-      buildDescription(card)
-    ];
-  });
-
-  const csvContent = [headers, ...rows]
-    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-
-  // Mark exported cards
-  for (const card of cardsToExport) {
-    if (card.status === 'pending') {
-      card.status = 'exported';
-      card.lastModified = new Date().toISOString();
-      await db.saveCard(card);
-    }
-  }
-
-  // Download
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `card-listings-${new Date().toISOString().split('T')[0]}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-
-  toast(`Exported ${cardsToExport.length} listing(s)`, 'success');
-  await refreshListings();
-}
-
-function buildDescription(card) {
-  const lines = [];
-  lines.push(`${card.year || ''} ${card.brand || ''} ${card.setName || ''}`);
-  if (card.player) lines.push(`Player: ${card.player}`);
-  if (card.team) lines.push(`Team: ${card.team}`);
-  if (card.cardNumber) lines.push(`Card #${card.cardNumber}`);
-  if (card.parallel) lines.push(`Parallel: ${card.parallel}`);
-  if (card.serialNumber) lines.push(`Serial: ${card.serialNumber}`);
-  if (card.condition) lines.push(`Condition: ${card.condition}`);
-  return lines.join(' | ');
-}
-
-// ===== Swipe to Delete =====
-
-function initSwipeToDelete() {
-  const container = $('#listings-list');
-  let touchStartX = 0;
-  let touchStartY = 0;
-  let activeItem = null;
-  let swiping = false;
-
-  container.addEventListener('touchstart', (e) => {
-    const item = e.target.closest('.listing-item');
-    if (!item) return;
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    activeItem = item;
-    swiping = false;
-  }, { passive: true });
-
-  container.addEventListener('touchmove', (e) => {
-    if (!activeItem) return;
-    const dx = e.touches[0].clientX - touchStartX;
-    const dy = e.touches[0].clientY - touchStartY;
-
-    // Only swipe horizontally
-    if (!swiping && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
-      swiping = true;
-    }
-
-    if (swiping && dx < 0) {
-      const offset = Math.max(dx, -100);
-      activeItem.style.transform = `translateX(${offset}px)`;
-      activeItem.style.transition = 'none';
-
-      // Show delete indicator
-      if (!activeItem.querySelector('.swipe-delete-bg')) {
-        const bg = document.createElement('div');
-        bg.className = 'swipe-delete-bg';
-        bg.innerHTML = '&#128465; Delete';
-        activeItem.style.position = 'relative';
-        activeItem.style.overflow = 'visible';
-        activeItem.appendChild(bg);
-      }
-    }
-  }, { passive: true });
-
-  container.addEventListener('touchend', async (e) => {
-    if (!activeItem) return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-
-    if (swiping && dx < -80) {
-      // Swiped far enough — delete
-      const id = activeItem.dataset.id;
-      activeItem.style.transition = 'transform 0.2s, opacity 0.2s';
-      activeItem.style.transform = 'translateX(-100%)';
-      activeItem.style.opacity = '0';
-      setTimeout(async () => {
-        await db.softDeleteCard(id);
-        await refreshListings();
-        toast('Listing moved to trash', 'success');
-      }, 200);
-    } else if (swiping) {
-      // Snap back
-      activeItem.style.transition = 'transform 0.2s';
-      activeItem.style.transform = '';
-      const bg = activeItem.querySelector('.swipe-delete-bg');
-      if (bg) bg.remove();
-    }
-
-    activeItem = null;
-    swiping = false;
-  }, { passive: true });
-}
-

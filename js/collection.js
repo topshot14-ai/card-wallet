@@ -102,7 +102,11 @@ export async function initCollection() {
 }
 
 export async function refreshCollection() {
-  allCards = await db.getCardsByMode('collection');
+  // Include collection cards + listing-mode cards that are NOT active on eBay
+  const collectionCards = await db.getCardsByMode('collection');
+  const listingCards = await db.getCardsByMode('listing');
+  const nonActiveListings = listingCards.filter(c => c.status !== 'listed' || !c.ebayListingId);
+  allCards = [...collectionCards, ...nonActiveListings];
   $('#collection-count').textContent = allCards.length;
 
   // Calculate and show collection value
@@ -183,7 +187,7 @@ function renderEmptyState() {
     return `<div class="empty-state-rich" style="grid-column:1/-1">
       <div class="empty-state-icon">&#127183;</div>
       <div class="empty-state-title">Your collection is empty</div>
-      <div class="empty-state-desc">Scan cards in "Collect It" mode to start building your collection.</div>
+      <div class="empty-state-desc">Scan cards in "Collect" mode to start building your collection.</div>
     </div>`;
   }
   return `<p class="empty-state" style="grid-column:1/-1">No cards match your search.</p>`;

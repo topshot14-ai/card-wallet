@@ -36,6 +36,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const viewId = `view-${tab.dataset.view}`;
       showView(viewId);
 
+      // Notify which view is now active (used by listings auto-refresh)
+      window.dispatchEvent(new CustomEvent('view-changed', { detail: { view: viewId } }));
+
       // Refresh data when switching tabs
       if (tab.dataset.view === 'dashboard') refreshDashboard();
       if (tab.dataset.view === 'listings') refreshListings();
@@ -649,7 +652,42 @@ async function saveCurrentCard() {
 
   try {
     await db.saveCard(card);
-    toast(`Card saved to ${card.mode === 'listing' ? 'listings' : 'collection'}`, 'success');
+
+    // Quick List: auto-trigger eBay listing if in listing mode and not yet listed
+    if (card.mode === 'listing' && !card.ebayListingId) {
+      const connected = await isEbayConnected();
+      if (connected) {
+        toast('Card saved — starting eBay listing...', 'success');
+        await loadRecentScans();
+        goBack();
+        // Trigger eBay listing flow (non-blocking for the save)
+        try {
+          await listCardOnEbay(card);
+          await refreshListings();
+        } catch (ebayErr) {
+          // Card is saved; listing flow failed or was cancelled
+          // Move card to collection since it's not listed
+          card.mode = 'collection';
+          card.lastModified = new Date().toISOString();
+          await db.saveCard(card);
+          await refreshCollection();
+          console.warn('[Quick List] eBay listing cancelled/failed:', ebayErr.message);
+        }
+        return;
+      } else {
+        // eBay not connected — save to collection instead
+        card.mode = 'collection';
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+        toast('Card saved to collection — connect eBay in Settings to Quick List', 'info', 4000);
+        await refreshCollection();
+        await loadRecentScans();
+        goBack();
+        return;
+      }
+    }
+
+    toast(`Card saved to ${card.mode === 'listing' ? 'active listings' : 'collection'}`, 'success');
 
     // Refresh the appropriate view
     if (card.mode === 'listing') {
@@ -717,7 +755,7 @@ async function loadRecentScans() {
         <div class="name">${escapeHtml(cardDisplayName(card))}</div>
         <div class="detail">${escapeHtml(cardDetailLine(card))} &middot; ${formatDate(card.dateAdded)}</div>
       </div>
-      <span class="recent-scan-mode ${card.mode}">${card.mode === 'listing' ? 'List' : 'Collect'}</span>
+      <span class="recent-scan-mode ${card.mode}">${card.mode === 'listing' ? 'Quick List' : 'Collect'}</span>
     </div>
   `).join('');
 
@@ -1482,7 +1520,7 @@ async function runGlobalSearch(query) {
         <div class="name">${escapeHtml(cardDisplayName(card))}</div>
         <div class="detail">${escapeHtml(cardDetailLine(card))}</div>
       </div>
-      <span class="global-search-mode ${card.mode}">${card.mode === 'listing' ? 'List' : 'Collect'}</span>
+      <span class="global-search-mode ${card.mode}">${card.mode === 'listing' ? 'Quick List' : 'Collect'}</span>
     </div>
   `).join('');
 }
