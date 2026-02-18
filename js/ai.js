@@ -15,10 +15,10 @@ const HAIKU_MODEL_PREFIX = 'claude-haiku';
  */
 const PARALLEL_DATABASE = {
   'optic': [
-    'Base', 'Holo', 'Purple Shock', 'Blue Velocity', 'Hyper Blue',
+    'Base', 'Holo', 'Silver Holo', 'Purple Shock', 'Blue Velocity', 'Hyper Blue',
     'Red', 'Green', 'Orange', 'Gold', 'Black', 'Pink', 'White Sparkle',
     'Rated Rookie Holo', 'Gold Vinyl', 'Blue Shimmer', 'Downtown',
-    'Contenders Optic', 'Silver',
+    'Contenders Optic',
   ],
   'prizm': [
     'Base', 'Silver', 'Silver Prizm', 'Blue', 'Red', 'Green', 'Purple',
@@ -95,14 +95,13 @@ const PARALLEL_DATABASE = {
 
 /**
  * Validate a parallel against the known set database.
- * Returns { valid, corrected, setFound } where:
+ * Returns { valid, setFound } where:
  *   valid = true if parallel is valid for this set (or set unknown)
- *   corrected = suggested replacement (or null)
  *   setFound = true if the set was found in the database
  */
 function validateParallel(setName, parallel) {
-  if (!parallel || !parallel.trim()) return { valid: true, corrected: null, setFound: false };
-  if (!setName || !setName.trim()) return { valid: true, corrected: null, setFound: false };
+  if (!parallel || !parallel.trim()) return { valid: true, setFound: false };
+  if (!setName || !setName.trim()) return { valid: true, setFound: false };
 
   const setLower = setName.toLowerCase();
   const parallelLower = parallel.toLowerCase().trim();
@@ -118,23 +117,13 @@ function validateParallel(setName, parallel) {
     }
   }
 
-  if (!matchedKey) return { valid: true, corrected: null, setFound: false };
+  if (!matchedKey) return { valid: true, setFound: false };
 
   const validParallels = PARALLEL_DATABASE[matchedKey];
 
-  // Case-insensitive check against valid parallels
+  // Case-insensitive exact match against valid parallels
   const isValid = validParallels.some(p => p.toLowerCase() === parallelLower);
-  if (isValid) return { valid: true, corrected: null, setFound: true };
-
-  // Check for partial match (e.g., "Silver Prizm" contains "Silver")
-  // Try to find the closest valid parallel
-  for (const vp of validParallels) {
-    if (parallelLower.includes(vp.toLowerCase()) || vp.toLowerCase().includes(parallelLower)) {
-      return { valid: false, corrected: vp, setFound: true };
-    }
-  }
-
-  return { valid: false, corrected: null, setFound: true };
+  return { valid: isValid, setFound: true };
 }
 
 const SYSTEM_PROMPT = `You are an elite sports trading card identification expert with perfect vision. You have encyclopedic knowledge of every major card release from the 1950s to present day across all sports. Your identifications are used for pricing and listing, so accuracy is critical.
@@ -247,11 +236,9 @@ export async function identifyCard(frontBase64, backBase64 = null, onStatusChang
 
   const cardData = await callVisionAPI(apiKey, model, frontBase64, backBase64);
 
-  // Auto-fallback: if using Haiku and result looks incomplete OR back was provided,
-  // retry with Sonnet. When the user scans both sides, accuracy matters — Haiku
-  // often misreads the copyright year and set name from back text.
+  // Auto-fallback: if using Haiku and result looks incomplete, retry with Sonnet
   const shouldFallback = model.startsWith(HAIKU_MODEL_PREFIX) &&
-    (isLowConfidence(cardData) || backBase64);
+    isLowConfidence(cardData);
   if (shouldFallback) {
     if (onStatusChange) onStatusChange('Verifying with Sonnet for accuracy...');
     try {
@@ -659,17 +646,10 @@ function normalizeCardData(cardData) {
   // Validate parallel against set-specific database
   if (cardData.setName && cardData.parallel) {
     const result = validateParallel(cardData.setName, cardData.parallel);
-    if (!result.valid) {
-      const originalParallel = cardData.parallel;
-      if (result.corrected) {
-        // Auto-correct to the right parallel name for this set
-        cardData.parallel = result.corrected;
-        cardData._parallelCorrected = `${originalParallel} → ${result.corrected}`;
-      } else {
-        // Unknown parallel for this set — clear it and flag for review
-        cardData.parallel = '';
-        cardData._parallelNeedsReview = originalParallel;
-      }
+    if (!result.valid && result.setFound) {
+      // Invalid parallel for this set — clear it and flag for user review
+      cardData._parallelNeedsReview = cardData.parallel;
+      cardData.parallel = '';
     }
   }
 

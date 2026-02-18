@@ -385,12 +385,9 @@ async function handleIdentifyNow() {
     delete aiData._fallback;
   }
 
-  // Parallel validation notifications
-  if (aiData._parallelCorrected) {
-    toast(`Parallel corrected: ${aiData._parallelCorrected}`, 'info', 4000);
-    delete aiData._parallelCorrected;
-  } else if (aiData._parallelNeedsReview) {
-    toast(`"${aiData._parallelNeedsReview}" isn't a known parallel for this set — please verify`, 'warning', 5000);
+  // Parallel validation notification
+  if (aiData._parallelNeedsReview) {
+    toast(`"${aiData._parallelNeedsReview}" isn't a known ${aiData.setName || ''} parallel — please fill in`, 'warning', 5000);
     delete aiData._parallelNeedsReview;
   }
 
@@ -2235,12 +2232,9 @@ async function handleIdentifyAll() {
           imageBackThumb: item.backPhoto ? item.backPhoto.thumbnailBase64 : null
         });
 
-        // Parallel validation notifications for batch
-        if (aiData._parallelCorrected) {
-          toast(`${aiData.player || 'Card'}: parallel corrected (${aiData._parallelCorrected})`, 'info', 4000);
-          delete aiData._parallelCorrected;
-        } else if (aiData._parallelNeedsReview) {
-          toast(`${aiData.player || 'Card'}: "${aiData._parallelNeedsReview}" isn't a known parallel — please verify`, 'warning', 5000);
+        // Parallel validation notification for batch
+        if (aiData._parallelNeedsReview) {
+          toast(`${aiData.player || 'Card'}: "${aiData._parallelNeedsReview}" isn't a known ${aiData.setName || ''} parallel`, 'warning', 5000);
           delete aiData._parallelNeedsReview;
         }
 
