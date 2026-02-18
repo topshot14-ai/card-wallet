@@ -63,6 +63,22 @@ function loadOpenCV() {
   return cvLoading;
 }
 
+// ===== Helpers =====
+
+/**
+ * Fast approximate median of a grayscale Mat by sampling pixels.
+ */
+function computeMedianGray(grayMat) {
+  const data = grayMat.data;
+  const step = Math.max(1, Math.floor(data.length / 2000));
+  const samples = [];
+  for (let i = 0; i < data.length; i += step) {
+    samples.push(data[i]);
+  }
+  samples.sort((a, b) => a - b);
+  return samples[Math.floor(samples.length / 2)];
+}
+
 // ===== Edge Detection =====
 
 function detectCardEdges(canvas) {
@@ -84,9 +100,12 @@ function detectCardEdges(canvas) {
   const imgArea = dw * dh;
 
   // Try multiple detection strategies on the downscaled image
+  // Order: fast/reliable first, then broader searches, then line-based
   const strategies = [
     () => detectWithOtsu(small, dw, dh, imgArea),
     () => detectWithSaturation(small, dw, dh, imgArea),
+    () => detectWithMultiThreshold(small, dw, dh, imgArea),
+    () => detectWithHoughLines(small, dw, dh, imgArea),
     () => detectWithCanny(small, dw, dh, imgArea),
   ];
 
@@ -124,23 +143,23 @@ function isCardShaped(corners, imgW, imgH) {
   const avgH = (heightLeft + heightRight) / 2;
   const ratio = Math.min(avgW, avgH) / Math.max(avgW, avgH);
 
-  // Card ratio is ~0.714; accept 0.5 to 0.9 (generous range for perspective distortion)
-  if (ratio < 0.45 || ratio > 0.92) return false;
+  // Card ratio is ~0.714; accept wider range for perspective distortion
+  if (ratio < 0.38 || ratio > 0.95) return false;
 
-  // Check area — reject if quad covers >80% of image
+  // Check area — reject if quad covers >90% of image
   const quadArea = avgW * avgH;
   const imgArea = imgW * imgH;
-  if (quadArea / imgArea > 0.80) return false;
+  if (quadArea / imgArea > 0.90) return false;
 
-  // Check edge proximity — reject if 3+ corners are near image edges
-  const margin = Math.min(imgW, imgH) * 0.05;
+  // Check edge proximity — reject only if ALL 4 corners hug the image edges
+  const margin = Math.min(imgW, imgH) * 0.03;
   let edgeCorners = 0;
   for (const c of corners) {
     if (c.x < margin || c.x > imgW - margin || c.y < margin || c.y > imgH - margin) {
       edgeCorners++;
     }
   }
-  if (edgeCorners >= 3) return false;
+  if (edgeCorners >= 4) return false;
 
   return true;
 }
@@ -221,7 +240,230 @@ function detectWithSaturation(src, imgW, imgH, imgArea) {
 }
 
 /**
- * Strategy 3: Canny edge detection — fallback.
+ * Strategy 3: Multi-threshold — tries many brightness thresholds and picks
+ * the one producing the best card-shaped contour. Catches cases where Otsu
+ * picks a suboptimal split point.
+ */
+function detectWithMultiThreshold(src, imgW, imgH, imgArea) {
+  const gray = new cv.Mat();
+
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    const filtered = new cv.Mat();
+    cv.GaussianBlur(gray, filtered, new cv.Size(5, 5), 0);
+
+    let bestResult = null;
+    let bestScore = 0;
+
+    for (let thresh = 40; thresh <= 220; thresh += 20) {
+      const binary = new cv.Mat();
+      cv.threshold(filtered, binary, thresh, 255, cv.THRESH_BINARY);
+
+      // Morphological cleanup
+      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+      cv.morphologyEx(binary, binary, cv.MORPH_CLOSE, kernel);
+      cv.morphologyEx(binary, binary, cv.MORPH_OPEN, kernel);
+      kernel.delete();
+
+      // Try normal and inverted
+      for (let inv = 0; inv < 2; inv++) {
+        if (inv === 1) cv.bitwise_not(binary, binary);
+        const result = findCardRect(binary, imgW, imgH, imgArea);
+        if (result) {
+          const score = scoreCardQuad(result, imgW, imgH, imgArea);
+          if (score > bestScore) {
+            bestScore = score;
+            bestResult = result;
+          }
+        }
+      }
+      binary.delete();
+    }
+
+    filtered.delete();
+    return bestResult;
+  } finally {
+    gray.delete();
+  }
+}
+
+/**
+ * Score a detected quad — higher = more card-like.
+ * Prefers: correct aspect ratio, reasonable size, away from edges.
+ */
+function scoreCardQuad(corners, imgW, imgH, imgArea) {
+  const widthTop = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+  const widthBottom = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
+  const heightLeft = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+  const heightRight = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
+  const avgW = (widthTop + widthBottom) / 2;
+  const avgH = (heightLeft + heightRight) / 2;
+  const ratio = Math.min(avgW, avgH) / Math.max(avgW, avgH);
+  const area = avgW * avgH;
+
+  // Aspect ratio score — card is ~0.714
+  const ratioScore = 1 - Math.abs(ratio - CARD_RATIO) * 2;
+
+  // Area score — prefer larger cards but not full-image
+  const areaPct = area / imgArea;
+  const areaScore = areaPct < 0.85 ? areaPct : areaPct * 0.5;
+
+  // Symmetry score — top/bottom widths and left/right heights should match
+  const symW = 1 - Math.abs(widthTop - widthBottom) / Math.max(widthTop, widthBottom);
+  const symH = 1 - Math.abs(heightLeft - heightRight) / Math.max(heightLeft, heightRight);
+  const symScore = (symW + symH) / 2;
+
+  return ratioScore * 0.4 + areaScore * 0.3 + symScore * 0.3;
+}
+
+/**
+ * Strategy 4: Hough Line detection — finds straight line segments and
+ * constructs a card rectangle from their intersections. More robust on
+ * textured backgrounds (wood grain, fabric) where contour methods fail.
+ */
+function detectWithHoughLines(src, imgW, imgH, imgArea) {
+  const gray = new cv.Mat();
+  const edges = new cv.Mat();
+  const lines = new cv.Mat();
+
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+
+    const median = computeMedianGray(gray);
+    const low = Math.max(20, Math.round(median * 0.5));
+    const high = Math.min(250, Math.round(median * 1.5));
+    cv.Canny(gray, edges, low, high);
+
+    // Dilate to connect nearby edge fragments
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+    cv.dilate(edges, edges, kernel);
+    kernel.delete();
+
+    const minLen = Math.min(imgW, imgH) * 0.12;
+    const maxGap = Math.min(imgW, imgH) * 0.03;
+    cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 40, minLen, maxGap);
+
+    if (lines.rows < 4) return null;
+
+    // Classify lines as horizontal or vertical
+    const hLines = [];
+    const vLines = [];
+
+    for (let i = 0; i < lines.rows; i++) {
+      const x1 = lines.data32S[i * 4];
+      const y1 = lines.data32S[i * 4 + 1];
+      const x2 = lines.data32S[i * 4 + 2];
+      const y2 = lines.data32S[i * 4 + 3];
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      const angle = Math.atan2(Math.abs(y2 - y1), Math.abs(x2 - x1));
+
+      if (angle < Math.PI / 6) {
+        hLines.push({ pos: (y1 + y2) / 2, len });
+      } else if (angle > Math.PI / 3) {
+        vLines.push({ pos: (x1 + x2) / 2, len });
+      }
+    }
+
+    if (hLines.length < 2 || vLines.length < 2) return null;
+
+    // Cluster nearby lines (merge lines within threshold distance)
+    const hClusters = clusterByPosition(hLines, imgH * 0.04);
+    const vClusters = clusterByPosition(vLines, imgW * 0.04);
+
+    if (hClusters.length < 2 || vClusters.length < 2) return null;
+
+    // Sort clusters by position
+    hClusters.sort((a, b) => a.pos - b.pos);
+    vClusters.sort((a, b) => a.pos - b.pos);
+
+    // Find the best rectangle from cluster pairs
+    let bestRect = null;
+    let bestScore = 0;
+
+    const hMax = Math.min(hClusters.length, 6);
+    const vMax = Math.min(vClusters.length, 6);
+
+    for (let hi = 0; hi < hMax - 1; hi++) {
+      for (let hj = hi + 1; hj < hMax; hj++) {
+        for (let vi = 0; vi < vMax - 1; vi++) {
+          for (let vj = vi + 1; vj < vMax; vj++) {
+            const top = hClusters[hi].pos;
+            const bottom = hClusters[hj].pos;
+            const left = vClusters[vi].pos;
+            const right = vClusters[vj].pos;
+
+            const w = right - left;
+            const h = bottom - top;
+            if (w < 1 || h < 1) continue;
+            const area = w * h;
+
+            if (area < imgArea * MIN_AREA_RATIO) continue;
+            if (area > imgArea * MAX_AREA_RATIO) continue;
+
+            const ratio = Math.min(w, h) / Math.max(w, h);
+            if (ratio < 0.4 || ratio > 0.95) continue;
+
+            const ratioScore = 1 - Math.abs(ratio - CARD_RATIO) * 2;
+            const areaScore = area / imgArea;
+            const totalLen = hClusters[hi].totalLen + hClusters[hj].totalLen +
+                             vClusters[vi].totalLen + vClusters[vj].totalLen;
+            const lenScore = Math.min(1, totalLen / (2 * (w + h)));
+
+            const score = ratioScore * 0.3 + areaScore * 0.3 + lenScore * 0.4;
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestRect = [
+                { x: Math.round(left), y: Math.round(top) },
+                { x: Math.round(right), y: Math.round(top) },
+                { x: Math.round(right), y: Math.round(bottom) },
+                { x: Math.round(left), y: Math.round(bottom) }
+              ];
+            }
+          }
+        }
+      }
+    }
+
+    return bestRect ? orderCorners(bestRect) : null;
+  } finally {
+    gray.delete();
+    edges.delete();
+    lines.delete();
+  }
+}
+
+/**
+ * Cluster lines by position, merging lines within `threshold` distance.
+ * Returns sorted clusters with weighted average position and total line length.
+ */
+function clusterByPosition(lines, threshold) {
+  const sorted = [...lines].sort((a, b) => a.pos - b.pos);
+  const clusters = [];
+
+  for (const line of sorted) {
+    let merged = false;
+    for (const cluster of clusters) {
+      if (Math.abs(cluster.pos - line.pos) < threshold) {
+        const total = cluster.totalLen + line.len;
+        cluster.pos = (cluster.pos * cluster.totalLen + line.pos * line.len) / total;
+        cluster.totalLen = total;
+        cluster.count++;
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) {
+      clusters.push({ pos: line.pos, totalLen: line.len, count: 1 });
+    }
+  }
+
+  return clusters;
+}
+
+/**
+ * Strategy 5: Canny edge detection with adaptive thresholds.
  */
 function detectWithCanny(src, imgW, imgH, imgArea) {
   const gray = new cv.Mat();
@@ -230,7 +472,12 @@ function detectWithCanny(src, imgW, imgH, imgArea) {
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-    cv.Canny(gray, edges, 30, 100);
+
+    // Adaptive thresholds based on image median intensity
+    const median = computeMedianGray(gray);
+    const low = Math.max(15, Math.round(median * 0.5));
+    const high = Math.min(250, Math.round(median * 1.3));
+    cv.Canny(gray, edges, low, high);
 
     const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
     cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel);
@@ -374,13 +621,15 @@ function applyPerspectiveCorrection(srcCanvas, corners) {
     (corners[3].x * corners[0].y - corners[0].x * corners[3].y)
   ) / 2;
   const coverageRatio = quadArea / imgArea;
-  let expansionPct = 0;
+  // Always expand to ensure card corners are visible — critical for eBay buyers
+  // assessing card condition. Minimum 2% expansion even for close-up shots.
+  let expansionPct = 0.02;
   if (coverageRatio < 0.55) {
     expansionPct = 0.06; // Small in frame — likely found inner boundary, expand aggressively
   } else if (coverageRatio < 0.80) {
-    expansionPct = 0.03; // Medium — minor adjustment
+    expansionPct = 0.035; // Medium — moderate adjustment
   }
-  // >80% coverage: skip expansion, detection probably failed
+  // >80% coverage: still apply minimum 2% for corner visibility
   if (expansionPct > 0) {
     corners = expandCorners(corners, expansionPct, srcCanvas.width, srcCanvas.height);
   }
@@ -688,12 +937,25 @@ export async function showScanner(fullBase64) {
     tempCanvas.height = img.height;
     tempCanvas.getContext('2d').drawImage(img, 0, 0);
 
-    const corners = detectCardEdges(tempCanvas);
+    let corners = detectCardEdges(tempCanvas);
 
     if (!corners) {
-      // No card detected — skip scanner
-      overlay.classList.add('hidden');
-      return { enhanced: false };
+      // No card detected — show default card-shaped rectangle centered on image
+      // so user can manually drag corners to fit. Much better than silently skipping.
+      const w = img.width;
+      const h = img.height;
+      const cardW = w * 0.6;
+      const cardH = cardW / CARD_RATIO; // 5:7 ratio
+      const finalH = Math.min(cardH, h * 0.75);
+      const finalW = finalH * CARD_RATIO;
+      const cx = w / 2;
+      const cy = h / 2;
+      corners = [
+        { x: Math.round(cx - finalW / 2), y: Math.round(cy - finalH / 2) },
+        { x: Math.round(cx + finalW / 2), y: Math.round(cy - finalH / 2) },
+        { x: Math.round(cx + finalW / 2), y: Math.round(cy + finalH / 2) },
+        { x: Math.round(cx - finalW / 2), y: Math.round(cy + finalH / 2) },
+      ];
     }
 
     // Show overlay with draggable corners
