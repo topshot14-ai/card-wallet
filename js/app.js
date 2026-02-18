@@ -1243,6 +1243,16 @@ function renderDetailCompsData(compData, statsEl, listEl) {
 }
 
 async function fetchAndUpdateDetailComps(card) {
+  // Skip fetch if we have recent data (< 1 hour old) to avoid rate limits
+  if (card.compData && card.compData.fetchedAt) {
+    const age = Date.now() - new Date(card.compData.fetchedAt).getTime();
+    if (age < 60 * 60 * 1000) {
+      const loading = document.getElementById('detail-comps-loading');
+      if (loading) loading.classList.add('hidden');
+      return;
+    }
+  }
+
   const result = await fetchCompsForCard(card);
   const loading = document.getElementById('detail-comps-loading');
   const statsEl = document.getElementById('detail-comps-stats');
