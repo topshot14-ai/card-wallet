@@ -2,7 +2,7 @@
 
 import * as db from './db.js';
 import { toast, confirm, $, escapeHtml } from './ui.js';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut } from './auth.js';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword, signOut as authSignOut, getCurrentUser } from './auth.js';
 import { pullAllCards, pullSettings, pushSettings, syncImages } from './sync.js';
 
 export async function initSettings() {
@@ -223,8 +223,14 @@ export async function initSettings() {
     }
   });
 
-  // Set initial account state — auth listener will switch to signed-in if already authed
-  showAccountState('signed-out');
+  // Set initial account state — check current auth directly (event may have already fired)
+  const user = getCurrentUser();
+  if (user) {
+    showAccountState('signed-in');
+    $('#auth-user-email').textContent = user.email || user.displayName || 'Signed In';
+  } else {
+    showAccountState('signed-out');
+  }
 
   // Trash management
   initTrash();
