@@ -1,4 +1,4 @@
-// Dashboard — P&L, portfolio value, recent activity, best/worst flips, alerts, sport breakdown
+// Dashboard — seller-focused metrics, P&L, sold history, recent activity
 
 import * as db from './db.js';
 import { formatDate, $, escapeHtml } from './ui.js';
@@ -19,91 +19,36 @@ export async function initDashboard() {
 
 export async function refreshDashboard() {
   const all = await db.getAllCards();
-  const listings = all.filter(c => c.mode === 'listing');
   const collection = all.filter(c => c.mode === 'collection');
-  const sold = listings.filter(c => c.status === 'sold');
-  const pending = listings.filter(c => c.status === 'pending' || c.status === 'exported' || c.status === 'listed');
+  const activeListings = await db.getActiveListings();
+  const sold = all.filter(c => c.status === 'sold');
 
   // Calculate stats
   const totalCards = all.length;
   const totalInvested = all.reduce((sum, c) => sum + (c.purchasePrice || 0), 0);
-  const totalRevenue = sold.reduce((sum, c) => sum + (c.soldPrice || c.startPrice || 0), 0);
+  const totalRevenue = sold.reduce((sum, c) => sum + (c.soldPrice || 0), 0);
+  const activeListingValue = activeListings.reduce((sum, c) => sum + (c.startPrice || 0), 0);
   const netProfit = totalRevenue - sold.reduce((sum, c) => sum + (c.purchasePrice || 0), 0);
 
-  // Portfolio value (estimated value of unsold cards)
-  const portfolioValue = all
-    .filter(c => c.status !== 'sold')
-    .reduce((sum, c) => {
-      if (c.estimatedValueLow && c.estimatedValueHigh) {
-        return sum + (c.estimatedValueLow + c.estimatedValueHigh) / 2;
-      }
-      if (c.estimatedValueLow) return sum + c.estimatedValueLow;
-      if (c.startPrice && c.mode === 'listing') return sum + c.startPrice;
-      return sum;
-    }, 0);
-
-  // Pending listing value
-  const pendingValue = pending.reduce((sum, c) => sum + (c.startPrice || 0), 0);
-
-  // Best and worst flips (sold cards with purchase price)
-  const flips = sold
-    .filter(c => c.purchasePrice && c.soldPrice)
-    .map(c => ({ ...c, profit: (c.soldPrice || 0) - c.purchasePrice }))
-    .sort((a, b) => b.profit - a.profit);
-
-  const bestFlips = flips.slice(0, 3);
-  const worstFlips = flips.length > 0 ? flips.slice(-3).reverse() : [];
-
-  // Stale listings (pending for 30+ days)
-  const now = Date.now();
-  const staleThreshold = 30 * 24 * 60 * 60 * 1000;
-  const staleListings = pending.filter(c => {
-    const added = new Date(c.dateAdded).getTime();
-    return (now - added) > staleThreshold;
-  });
-
-  // Sport breakdown
-  const sportCounts = {};
-  all.forEach(c => {
-    const sport = c.sport || 'Unknown';
-    sportCounts[sport] = (sportCounts[sport] || 0) + 1;
-  });
-  const sportBreakdown = Object.entries(sportCounts)
-    .sort((a, b) => b[1] - a[1]);
-
-  // Needs attention: cards without purchase price
-  const noPriceCount = all.filter(c => !c.purchasePrice && c.mode === 'listing').length;
-
-  // Shipped but not delivered
-  const shippedCount = sold.filter(c => c.shippingStatus === 'shipped').length;
+  // Sold history (newest first, max 10)
+  const soldHistory = [...sold]
+    .sort((a, b) => new Date(b.lastModified || b.dateAdded) - new Date(a.lastModified || a.dateAdded))
+    .slice(0, 10)
+    .map(c => ({ ...c, profit: (c.soldPrice || 0) - (c.purchasePrice || 0) }));
 
   // Recent activity (last 8 cards by lastModified)
   const recent = [...all]
     .sort((a, b) => new Date(b.lastModified || b.dateAdded) - new Date(a.lastModified || a.dateAdded))
     .slice(0, 8);
 
-  // Update tab badge counts (show pending/active count, not total)
-  updateTabBadges(pending.length, collection.length);
+  // Update tab badge counts
+  updateTabBadges(activeListings.length, collection.length);
 
   // Render
   const content = document.getElementById('dashboard-content');
   if (!content) return;
 
-  // Build alerts HTML
-  const alerts = [];
-  if (staleListings.length > 0) {
-    alerts.push(`<div class="dash-alert dash-alert-warning">&#9888; ${staleListings.length} listing${staleListings.length > 1 ? 's' : ''} pending for 30+ days — consider relisting or lowering the price.</div>`);
-  }
-  if (shippedCount > 0) {
-    alerts.push(`<div class="dash-alert dash-alert-info">&#128230; ${shippedCount} sold card${shippedCount > 1 ? 's' : ''} shipped but not marked delivered.</div>`);
-  }
-  if (noPriceCount > 0 && noPriceCount <= 10) {
-    alerts.push(`<div class="dash-alert dash-alert-info">&#128176; ${noPriceCount} listing${noPriceCount > 1 ? 's' : ''} missing purchase price — add it to track profit.</div>`);
-  }
-
   content.innerHTML = `
-    ${alerts.length > 0 ? `<div class="dash-alerts">${alerts.join('')}</div>` : ''}
-
     <!-- Key Metrics -->
     <div class="dash-metrics">
       <div class="dash-metric">
@@ -111,18 +56,16 @@ export async function refreshDashboard() {
         <div class="dash-metric-label">Total Cards</div>
       </div>
       <div class="dash-metric">
-        <div class="dash-metric-value">$${portfolioValue.toFixed(0)}</div>
-        <div class="dash-metric-label">Portfolio Value</div>
+        <div class="dash-metric-value">${activeListings.length}</div>
+        <div class="dash-metric-label">Active Listings</div>
       </div>
       <div class="dash-metric">
         <div class="dash-metric-value">${sold.length}</div>
-        <div class="dash-metric-label">Cards Sold</div>
+        <div class="dash-metric-label">Total Sold</div>
       </div>
       <div class="dash-metric">
-        <div class="dash-metric-value ${netProfit >= 0 ? 'profit-positive' : 'profit-negative'}">
-          ${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}
-        </div>
-        <div class="dash-metric-label">Realized Profit</div>
+        <div class="dash-metric-value">$${totalRevenue.toFixed(2)}</div>
+        <div class="dash-metric-label">Total Revenue</div>
       </div>
     </div>
 
@@ -139,61 +82,29 @@ export async function refreshDashboard() {
           <span>$${totalRevenue.toFixed(2)}</span>
         </div>
         <div class="dash-pl-row">
-          <span>Pending Listings (${pending.length})</span>
-          <span>$${pendingValue.toFixed(2)}</span>
+          <span>Active Listing Value (${activeListings.length})</span>
+          <span>$${activeListingValue.toFixed(2)}</span>
         </div>
         <div class="dash-pl-row dash-pl-total ${netProfit >= 0 ? 'profit-positive' : 'profit-negative'}">
-          <span>Realized Profit</span>
+          <span>Net Profit</span>
           <span>${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}</span>
         </div>
       </div>
     </div>
 
-    ${sportBreakdown.length > 1 ? `
-    <!-- Sport Breakdown -->
+    ${soldHistory.length > 0 ? `
+    <!-- Sold History -->
     <div class="dash-section">
-      <h3>Collection by Sport</h3>
-      <div class="dash-sport-breakdown">
-        ${sportBreakdown.map(([sport, count]) => {
-          const pct = totalCards > 0 ? Math.round((count / totalCards) * 100) : 0;
-          return `
-            <div class="dash-sport-row">
-              <span class="dash-sport-name">${escapeHtml(sport)}</span>
-              <div class="dash-sport-bar-bg">
-                <div class="dash-sport-bar" style="width:${pct}%"></div>
-              </div>
-              <span class="dash-sport-count">${count}</span>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </div>
-    ` : ''}
-
-    ${bestFlips.length > 0 ? `
-    <!-- Best Flips -->
-    <div class="dash-section">
-      <h3>Best Flips</h3>
+      <h3>Sold History</h3>
       <div class="dash-flip-list">
-        ${bestFlips.map(c => `
+        ${soldHistory.map(c => `
           <div class="dash-flip-item" data-card-id="${c.id}">
+            ${c.imageThumbnail ? `<img src="${c.imageThumbnail}" alt="Card" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-right:8px">` : ''}
             <span class="dash-flip-name">${escapeHtml(cardDisplayName(c))}</span>
-            <span class="dash-flip-profit profit-positive">+$${c.profit.toFixed(2)}</span>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-    ` : ''}
-
-    ${worstFlips.length > 0 && worstFlips.some(c => c.profit < 0) ? `
-    <!-- Worst Flips -->
-    <div class="dash-section">
-      <h3>Worst Flips</h3>
-      <div class="dash-flip-list">
-        ${worstFlips.filter(c => c.profit < 0).map(c => `
-          <div class="dash-flip-item" data-card-id="${c.id}">
-            <span class="dash-flip-name">${escapeHtml(cardDisplayName(c))}</span>
-            <span class="dash-flip-profit profit-negative">-$${Math.abs(c.profit).toFixed(2)}</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+              <span style="color:var(--text-secondary);font-size:0.85em">$${(c.soldPrice || 0).toFixed(2)}</span>
+              <span class="dash-flip-profit ${c.profit >= 0 ? 'profit-positive' : 'profit-negative'}">${c.profit >= 0 ? '+' : ''}$${c.profit.toFixed(2)}</span>
+            </span>
           </div>
         `).join('')}
       </div>
