@@ -9,6 +9,13 @@ let liveData = new Map(); // ebayListingId → eBay Browse API data
 let autoRefreshTimer = null;
 let countdownTimer = null;
 let lastFetchedAt = null;
+let currentSort = 'ending-asc';
+
+// Restore saved sort preference
+try {
+  const savedSort = localStorage.getItem('cw_listingsSort');
+  if (savedSort) currentSort = savedSort;
+} catch {}
 
 export async function initListings() {
   // Run one-time migration from listing queue to collection
@@ -33,6 +40,17 @@ export async function initListings() {
       window.dispatchEvent(new CustomEvent('show-card-detail', { detail: { id: card.dataset.id } }));
     }
   });
+
+  // Sort dropdown
+  const sortEl = $('#listings-sort');
+  if (sortEl) {
+    sortEl.value = currentSort;
+    sortEl.addEventListener('change', (e) => {
+      currentSort = e.target.value;
+      try { localStorage.setItem('cw_listingsSort', currentSort); } catch {}
+      render();
+    });
+  }
 
   // Start/stop auto-refresh when listings tab becomes active/inactive
   window.addEventListener('view-changed', (e) => {
@@ -185,10 +203,47 @@ function renderRefreshStatus(offline = false) {
   }
 }
 
+function sortListings() {
+  activeCards.sort((a, b) => {
+    const liveA = liveData.get(a.ebayListingId);
+    const liveB = liveData.get(b.ebayListingId);
+
+    switch (currentSort) {
+      case 'ending-asc':
+      case 'ending-desc': {
+        const endA = liveA?.itemEndDate ? new Date(liveA.itemEndDate).getTime() : Infinity;
+        const endB = liveB?.itemEndDate ? new Date(liveB.itemEndDate).getTime() : Infinity;
+        return currentSort === 'ending-asc' ? endA - endB : endB - endA;
+      }
+      case 'price-asc':
+      case 'price-desc': {
+        const priceA = Number(liveA?.currentBidPrice?.value ?? liveA?.price?.value ?? a.startPrice ?? 0);
+        const priceB = Number(liveB?.currentBidPrice?.value ?? liveB?.price?.value ?? b.startPrice ?? 0);
+        return currentSort === 'price-asc' ? priceA - priceB : priceB - priceA;
+      }
+      case 'bids-desc': {
+        const bidsA = liveA?.bidCount || 0;
+        const bidsB = liveB?.bidCount || 0;
+        return bidsB - bidsA;
+      }
+      case 'dateAdded-desc': {
+        const dA = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+        const dB = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+        return dB - dA;
+      }
+      case 'player-asc':
+        return (a.player || '').localeCompare(b.player || '');
+      default:
+        return 0;
+    }
+  });
+}
+
 function render() {
   const container = $('#listings-list');
 
   renderRefreshStatus();
+  sortListings();
 
   if (activeCards.length === 0) {
     container.innerHTML = `<div class="empty-state-rich">
