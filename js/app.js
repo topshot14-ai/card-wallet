@@ -1399,11 +1399,12 @@ async function handleCheckSoldPrices() {
     return;
   }
 
-  // Build search query from card fields
+  // Build search query from card fields (matches fetchCompsForCard)
   const parts = [];
   if (currentCard.year) parts.push(currentCard.year);
   if (currentCard.brand) parts.push(currentCard.brand);
   if (currentCard.setName) parts.push(currentCard.setName);
+  if (currentCard.subset) parts.push(currentCard.subset);
   if (currentCard.player) parts.push(currentCard.player);
   if (currentCard.parallel) parts.push(currentCard.parallel);
   if (currentCard.cardNumber) parts.push(`#${currentCard.cardNumber}`);
@@ -1414,10 +1415,19 @@ async function handleCheckSoldPrices() {
     return;
   }
 
+  // Build filter and exclude params (same as fetchCompsForCard)
+  const filterTerms = [];
+  if (currentCard.setName) filterTerms.push(currentCard.setName);
+  if (currentCard.subset) filterTerms.push(currentCard.subset);
+  if (currentCard.parallel) filterTerms.push(currentCard.parallel);
+  if (currentCard.cardNumber) filterTerms.push(currentCard.cardNumber);
+  const filterParam = filterTerms.length > 0 ? `&filter=${encodeURIComponent(filterTerms.join(','))}` : '';
+  const excludeParam = buildExcludeParam(currentCard);
+
   showLoading('Checking sold prices...');
 
   try {
-    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}`);
+    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}${filterParam}${excludeParam}`);
     hideLoading();
 
     if (!resp.ok) {
@@ -1482,6 +1492,26 @@ function displaySoldPrices(data) {
 }
 
 // Reusable function to fetch sold comps for any card
+// Build exclude param to filter out common parallel/variant names that don't match this card.
+// Skips any term that appears in the card's own metadata so we don't exclude ourselves.
+function buildExcludeParam(card) {
+  const variantTerms = [
+    'retro', 'refractor', 'holo', 'mojo', 'prizm', 'silver',
+    'gold', 'pink', 'blue', 'green', 'red', 'orange', 'purple',
+    'optic', 'chrome', 'mosaic', 'select', 'disco', 'scope',
+    'wave', 'ice', 'shimmer', 'sparkle', 'cracked ice',
+    'rated rookie', 'press proof', 'die-cut', 'auto', 'autograph',
+    'patch', 'relic', 'jersey', 'memorabilia', 'sp ', 'ssp',
+    'case hit', 'downtown', 'kaboom', 'color blast'
+  ];
+  // Combine all card metadata into one lowercase string
+  const ownMeta = [
+    card.setName, card.subset, card.parallel, card.brand, card.team, card.player
+  ].filter(Boolean).join(' ').toLowerCase();
+  const excludes = variantTerms.filter(term => !ownMeta.includes(term));
+  return excludes.length > 0 ? `&exclude=${encodeURIComponent(excludes.join(','))}` : '';
+}
+
 async function fetchCompsForCard(card) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
   if (!workerUrl) return null;
@@ -1489,19 +1519,21 @@ async function fetchCompsForCard(card) {
   // Use structured fields for 130point search (eBay titles have too much noise)
   const query = [
     card.year, card.brand, card.setName,
-    card.player, card.parallel
+    card.subset, card.player, card.parallel
   ].filter(Boolean).join(' ');
   if (!query.trim()) return null;
 
   // Build filter terms for tighter title matching
   const filterTerms = [];
   if (card.setName) filterTerms.push(card.setName);
+  if (card.subset) filterTerms.push(card.subset);
   if (card.parallel) filterTerms.push(card.parallel);
   if (card.cardNumber) filterTerms.push(card.cardNumber);
   const filterParam = filterTerms.length > 0 ? `&filter=${encodeURIComponent(filterTerms.join(','))}` : '';
+  const excludeParam = buildExcludeParam(card);
 
   try {
-    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}${filterParam}`);
+    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}${filterParam}${excludeParam}`);
     if (!resp.ok) return null;
 
     const data = await resp.json();
