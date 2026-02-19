@@ -1306,7 +1306,7 @@ async function fetchAndUpdateDetailComps(card) {
 
 const COMP_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 const COMP_STALE_AGE = 0; // TEMP: force refresh all comps
-const COMP_CALL_DELAY = 5000; // 5s between calls to avoid being blocked
+const COMP_CALL_DELAY = 2000; // 2s between calls
 
 function initCompRefresher() {
   // First run after 5s delay (let app finish loading)
