@@ -1305,7 +1305,7 @@ async function fetchAndUpdateDetailComps(card) {
 // ===== Background Comp Refresher =====
 
 const COMP_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-const COMP_STALE_AGE = 24 * 60 * 60 * 1000; // re-fetch if older than 24 hours
+const COMP_STALE_AGE = 0; // TEMP: force refresh all comps
 const COMP_CALL_DELAY = 5000; // 5s between calls to avoid being blocked
 
 function initCompRefresher() {
