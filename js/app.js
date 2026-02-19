@@ -1303,9 +1303,9 @@ async function fetchAndUpdateDetailComps(card) {
 
 // ===== Background Comp Refresher =====
 
-const COMP_REFRESH_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
-const COMP_STALE_AGE = 4 * 60 * 60 * 1000; // re-fetch if older than 4 hours
-const COMP_CALL_DELAY = 3000; // 3s between API calls to avoid rate limits
+const COMP_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const COMP_STALE_AGE = 24 * 60 * 60 * 1000; // re-fetch if older than 24 hours
+const COMP_CALL_DELAY = 5000; // 5s between calls to avoid being blocked
 
 function initCompRefresher() {
   // First run after 30s delay (let app finish loading)
