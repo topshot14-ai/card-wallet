@@ -854,6 +854,7 @@ body {
 
 .sort-row {
   display: flex;
+  margin-bottom: 10px;
 }
 
 .sort-row select {
