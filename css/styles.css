@@ -854,7 +854,11 @@ body {
 
 .sort-row {
   display: flex;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
+}
+
+#view-listings .sort-row {
+  margin-bottom: 12px;
 }
 
 .sort-row select {
