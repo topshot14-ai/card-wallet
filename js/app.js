@@ -1306,7 +1306,7 @@ async function fetchAndUpdateDetailComps(card) {
 
 const COMP_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 const COMP_STALE_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
-const COMP_CALL_DELAY = 2000; // 2s between calls
+const COMP_CALL_DELAY = 5000; // 5s between calls
 
 function initCompRefresher() {
   // First run after 5s delay (let app finish loading)
@@ -1318,7 +1318,7 @@ function initCompRefresher() {
   const btn = $('#btn-refresh-comps');
   if (btn) {
     btn.addEventListener('click', async () => {
-      toast('Refreshing sold prices for all cards...', 'info');
+      toast('Refreshing sold prices — this may take a few minutes...', 'info');
       btn.disabled = true;
       btn.textContent = 'Refreshing...';
       try {
@@ -1360,10 +1360,21 @@ async function refreshAllComps(force = false) {
 
   console.log(`[Comps] Refreshing ${needsRefresh.length} cards...`);
 
+  let delay = COMP_CALL_DELAY;
+  let successCount = 0;
+
   for (let i = 0; i < needsRefresh.length; i++) {
     const card = needsRefresh[i];
     try {
       const result = await fetchCompsForCard(card);
+      if (result && result.rateLimited) {
+        // Back off: double the delay (max 60s), then retry this card
+        delay = Math.min(delay * 2, 60000);
+        console.log(`[Comps] Rate limited, backing off ${delay / 1000}s...`);
+        await new Promise(r => setTimeout(r, delay));
+        i--; // Retry this card
+        continue;
+      }
       if (result) {
         card.estimatedValueLow = result.stats.low;
         card.estimatedValueHigh = result.stats.high;
@@ -1375,6 +1386,8 @@ async function refreshAllComps(force = false) {
           fetchedAt: new Date().toISOString()
         };
         await db.saveCardLocal(card);
+        successCount++;
+        delay = COMP_CALL_DELAY; // Reset delay on success
       }
     } catch {
       // Skip this card, continue with others
@@ -1382,11 +1395,11 @@ async function refreshAllComps(force = false) {
 
     // Delay between calls (skip delay after last card)
     if (i < needsRefresh.length - 1) {
-      await new Promise(r => setTimeout(r, COMP_CALL_DELAY));
+      await new Promise(r => setTimeout(r, delay));
     }
   }
 
-  console.log(`[Comps] Background refresh complete`);
+  console.log(`[Comps] Refresh complete: ${successCount}/${needsRefresh.length} updated`);
 }
 
 function editDetailCard() {
@@ -1557,6 +1570,7 @@ async function fetchCompsForCard(card) {
 
   try {
     const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}${filterParam}${excludeParam}`);
+    if (resp.status === 429) return { rateLimited: true };
     if (!resp.ok) return null;
 
     const data = await resp.json();
