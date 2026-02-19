@@ -1233,9 +1233,10 @@ function renderDetailCompsData(compData, statsEl, listEl) {
     statsEl.classList.remove('hidden');
   }
 
-  // Individual items
-  if (compData.items && compData.items.length > 0) {
-    listEl.innerHTML = compData.items.map(item => {
+  // Individual items (filter out ad/promoted listings with no real title)
+  const validItems = (compData.items || []).filter(i => i.title && i.title !== 'Unknown' && i.itemUrl);
+  if (validItems.length > 0) {
+    listEl.innerHTML = validItems.map(item => {
       const dateStr = item.soldDate ? formatDate(item.soldDate) : '';
       const titleText = escapeHtml((item.title || '').length > 60 ? item.title.substring(0, 57) + '...' : item.title || '');
       const link = item.itemUrl ? ` onclick="window.open('${escapeHtml(item.itemUrl)}', '_blank')"` : '';
