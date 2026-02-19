@@ -1313,6 +1313,24 @@ function initCompRefresher() {
   setTimeout(() => refreshAllComps(), 5000);
   // Then every 4 hours
   setInterval(() => refreshAllComps(), COMP_REFRESH_INTERVAL);
+
+  // Manual refresh button in Settings
+  const btn = $('#btn-refresh-comps');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      toast('Refreshing sold prices for all cards...', 'info');
+      btn.disabled = true;
+      btn.textContent = 'Refreshing...';
+      try {
+        await refreshAllComps(true);
+        toast('Sold prices refreshed', 'success');
+      } catch {
+        toast('Refresh failed', 'error');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Refresh All Sold Prices';
+    });
+  }
 }
 
 async function refreshAllComps(force = false) {
