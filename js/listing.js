@@ -239,6 +239,10 @@ function render() {
       countdownHtml = `<span class="listing-countdown${urgentClass}" data-end="${live.itemEndDate}">${formatCountdown(Math.max(0, diff))}</span>`;
     }
 
+    // Avg sold price from comp data
+    const avgSold = card.compData?.avg;
+    const avgHtml = avgSold ? `<span class="listing-avg-sold">Avg sold: $${Number(avgSold).toFixed(2)}</span>` : '';
+
     // eBay link
     const ebayUrl = card.ebayListingUrl || (live?.itemWebUrl) || `https://www.ebay.com/itm/${card.ebayListingId}`;
 
@@ -258,6 +262,7 @@ function render() {
         </div>
         <div class="active-listing-price-col">
           ${priceHtml}
+          ${avgHtml}
           <a href="${escapeHtml(ebayUrl)}" target="_blank" rel="noopener" class="listing-ebay-link" title="View on eBay">&#x1F517;</a>
         </div>
       </div>

@@ -768,6 +768,12 @@ body {
   font-size: 14px;
 }
 
+.listing-avg-sold {
+  font-size: 10px;
+  color: var(--gray-400);
+  white-space: nowrap;
+}
+
 .listing-ebay-link {
   font-size: 14px;
   text-decoration: none;
@@ -1763,6 +1769,10 @@ body {
 }
 
 [data-theme="dark"] .listing-live-price.local {
+  color: #9ca3af;
+}
+
+[data-theme="dark"] .listing-avg-sold {
   color: #9ca3af;
 }
 
