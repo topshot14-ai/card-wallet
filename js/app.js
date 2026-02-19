@@ -1222,14 +1222,6 @@ function renderDetailComps(card) {
   }
 }
 
-function formatDate(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d)) return dateStr;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch { return dateStr; }
-}
-
 function renderDetailCompsData(compData, statsEl, listEl) {
   // Stats row
   const parts = [];
