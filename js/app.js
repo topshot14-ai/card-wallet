@@ -1309,15 +1309,18 @@ const COMP_STALE_AGE = 0; // TEMP: force refresh all comps
 const COMP_CALL_DELAY = 5000; // 5s between calls to avoid being blocked
 
 function initCompRefresher() {
-  // First run after 30s delay (let app finish loading)
-  setTimeout(() => refreshAllComps(), 30000);
+  // First run after 5s delay (let app finish loading)
+  setTimeout(() => refreshAllComps(), 5000);
   // Then every 4 hours
   setInterval(() => refreshAllComps(), COMP_REFRESH_INTERVAL);
 }
 
 async function refreshAllComps() {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
-  if (!workerUrl) return;
+  if (!workerUrl) {
+    console.log('[Comps] No worker URL configured, skipping refresh');
+    return;
+  }
 
   let cards;
   try {
