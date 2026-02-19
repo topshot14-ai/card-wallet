@@ -1490,8 +1490,16 @@ async function fetchCompsForCard(card) {
   ].filter(Boolean).join(' ');
   if (!query.trim()) return null;
 
+  // Build filter terms for tighter title matching (set name, parallel)
+  const filterTerms = [];
+  if (card.setName && (!card.brand || !card.brand.toLowerCase().includes(card.setName.toLowerCase()))) {
+    filterTerms.push(card.setName);
+  }
+  if (card.parallel) filterTerms.push(card.parallel);
+  const filterParam = filterTerms.length > 0 ? `&filter=${encodeURIComponent(filterTerms.join(','))}` : '';
+
   try {
-    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}`);
+    const resp = await fetch(`${workerUrl}/sold-search?q=${encodeURIComponent(query)}${filterParam}`);
     if (!resp.ok) return null;
 
     const data = await resp.json();
