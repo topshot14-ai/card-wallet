@@ -1482,15 +1482,11 @@ async function fetchCompsForCard(card) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
   if (!workerUrl) return null;
 
-  const parts = [];
-  if (card.year) parts.push(card.year);
-  if (card.brand) parts.push(card.brand);
-  if (card.setName) parts.push(card.setName);
-  if (card.player) parts.push(card.player);
-  if (card.parallel) parts.push(card.parallel);
-  if (card.cardNumber) parts.push(`#${card.cardNumber}`);
-
-  const query = parts.join(' ');
+  // Use the eBay listing title for the most precise search
+  const query = card.ebayTitle || [
+    card.year, card.brand, card.setName,
+    card.player, card.parallel, card.cardNumber ? `#${card.cardNumber}` : ''
+  ].filter(Boolean).join(' ');
   if (!query.trim()) return null;
 
   try {
