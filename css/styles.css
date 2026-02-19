@@ -3049,3 +3049,335 @@ a:focus-visible {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* ===== Continuous Mode ===== */
+.continuous-mode-row {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--gray-50);
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-200);
+}
+
+[data-theme="dark"] .continuous-mode-row {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+/* ===== Scan Queue Header ===== */
+.scan-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.scan-queue-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-600);
+}
+
+/* ===== Dashboard Charts & Performance ===== */
+.dash-perf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.dash-perf-item {
+  text-align: center;
+  padding: 8px;
+  background: var(--gray-50);
+  border-radius: var(--radius);
+}
+
+[data-theme="dark"] .dash-perf-item {
+  background: #111827;
+}
+
+.dash-perf-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.dash-perf-label {
+  font-size: 11px;
+  color: var(--gray-500);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Dashboard Top Cards ===== */
+.dash-top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dash-top-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.dash-top-rank {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.dash-top-thumb {
+  width: 44px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.dash-top-thumb-placeholder {
+  width: 44px;
+  height: 56px;
+  background: var(--gray-100);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.dash-top-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-top-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-top-detail {
+  font-size: 11px;
+  color: var(--gray-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-top-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .dash-top-value {
+  color: #4ade80;
+}
+
+/* ===== AI Pre-Grade Section ===== */
+.ai-grade-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.ai-grade-overall {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ai-grade-meta {
+  flex: 1;
+}
+
+.ai-grade-estimate {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+[data-theme="dark"] .ai-grade-estimate {
+  color: #e5e7eb;
+}
+
+.ai-grade-confidence {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-top: 2px;
+}
+
+.ai-grade-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-grade-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-grade-bar-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.ai-grade-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--gray-100);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ai-grade-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.ai-grade-bar-score {
+  font-size: 13px;
+  font-weight: 700;
+  width: 20px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.ai-grade-bar-notes {
+  font-size: 11px;
+  color: var(--gray-500);
+  padding-left: 78px;
+  margin-top: -2px;
+  margin-bottom: 4px;
+}
+
+.ai-grade-recommendation {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ai-grade-recommendation.worth-it {
+  background: var(--success-light);
+  color: var(--success);
+  border: 1px solid rgba(22, 163, 74, 0.2);
+}
+
+.ai-grade-recommendation.not-worth {
+  background: var(--gray-50);
+  color: var(--gray-600);
+  border: 1px solid var(--gray-200);
+}
+
+[data-theme="dark"] .ai-grade-recommendation.not-worth {
+  background: #111827;
+  border-color: #374151;
+}
+
+/* ===== Comp Trend Badge ===== */
+.trend-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.trend-up {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.trend-down {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.trend-stable {
+  background: var(--gray-100);
+  color: var(--gray-500);
+}
+
+/* ===== Batch Review Carousel ===== */
+.batch-review-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  padding: 20px;
+}
+
+.batch-review-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+
+[data-theme="dark"] .batch-review-card {
+  background: #1f2937;
+}
+
+.batch-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.batch-review-header h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.batch-review-counter {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-500);
+}
+
+.batch-review-body {
+  min-height: 100px;
+  margin-bottom: 16px;
+}
+
+.batch-review-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.batch-review-actions .btn {
+  flex: 1;
+}

@@ -54,7 +54,9 @@ export function createCard(data = {}) {
     shippingCarrier: data.shippingCarrier || '',
     trackingNumber: data.trackingNumber || '',
     shippingStatus: data.shippingStatus || 'not_shipped', // 'not_shipped', 'shipped', 'delivered'
-    notes: data.notes || ''
+    notes: data.notes || '',
+    aiGradeData: data.aiGradeData || null,        // AI pre-grading analysis results
+    compHistory: data.compHistory || [],           // Array of { date, avg, low, high, volume } snapshots (max 90)
   };
 }
 

@@ -128,6 +128,15 @@
         <button id="btn-manual-entry" class="btn btn-secondary btn-sm">+ Manual Entry</button>
       </div>
 
+      <!-- Continuous Mode Toggle -->
+      <div class="continuous-mode-row">
+        <label class="toggle-row" style="font-size:13px">
+          <span>Continuous Scan</span>
+          <input type="checkbox" id="continuous-mode-toggle" class="toggle-input">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
       <!-- Scan Wizard (unified single + multi-card flow) -->
       <div class="scan-area" id="scan-wizard">
         <!-- Step 1: Front -->
@@ -182,6 +191,10 @@
 
       <!-- Scan Queue (appears when multiple cards are queued) -->
       <div id="scan-queue-section" class="hidden">
+        <div class="scan-queue-header">
+          <span id="scan-queue-count" class="scan-queue-count">0 cards queued</span>
+          <button id="btn-clear-queue" class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:11px">Clear</button>
+        </div>
         <div id="scan-queue" class="batch-queue"></div>
         <button id="btn-identify-all" class="btn btn-primary" style="width:100%;margin-bottom:12px" disabled>Identify All</button>
       </div>
@@ -666,7 +679,7 @@
         </div>
       </div>
 
-      <p class="app-version">Card Wallet v5.14.3</p>
+      <p class="app-version">Card Wallet v5.15.0</p>
     </div>
   </div>
 

@@ -3,7 +3,9 @@
 import * as db from './db.js';
 import { toast, showLoading, hideLoading, showView, goBack, formatDate, $, $$, escapeHtml } from './ui.js';
 import { processPhoto } from './camera.js';
-import { identifyCard } from './ai.js';
+import { identifyCard, gradeCard } from './ai.js';
+import { drawLineChart } from './charts.js';
+import { shareCard } from './share.js';
 import { createCard, generateEbayTitle, cardDisplayName, cardDetailLine } from './card-model.js';
 import { initListings, refreshListings } from './listing.js';
 import { initCollection, refreshCollection } from './collection.js';
@@ -27,6 +29,7 @@ let stagedBack = null;
 
 // Scan queue (unified single + multi-card flow)
 let scanQueue = []; // Array of { photo, backPhoto, status, card, error }
+let continuousMode = false; // When ON, auto-queues cards after capture
 
 // ===== Initialization =====
 
@@ -68,6 +71,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#btn-scan-more').addEventListener('click', handleScanMore);
   $('#gallery-upload').addEventListener('change', handleGalleryUpload);
   $('#btn-identify-all').addEventListener('click', handleIdentifyAll);
+
+  // Continuous mode toggle
+  const continuousToggle = document.getElementById('continuous-mode-toggle');
+  if (continuousToggle) {
+    continuousToggle.addEventListener('change', (e) => {
+      continuousMode = e.target.checked;
+    });
+  }
+
+  // Clear queue button
+  const clearQueueBtn = document.getElementById('btn-clear-queue');
+  if (clearQueueBtn) {
+    clearQueueBtn.addEventListener('click', () => {
+      scanQueue = [];
+      renderScanQueue();
+      updateIdentifyAllButton();
+      document.getElementById('scan-queue-section').classList.add('hidden');
+      toast('Queue cleared', 'info');
+    });
+  }
 
   // Add front/back photo from review screen
   $('#review-add-front-input').addEventListener('change', handleReviewAddFront);
@@ -296,8 +319,12 @@ async function handleScanBack(e) {
     preview.classList.remove('hidden');
     document.querySelector('#scan-slot-back .scan-btn').style.display = 'none';
 
-    // Auto-advance to ready prompt
-    setTimeout(showReadyPrompt, 300);
+    // Auto-advance: continuous mode auto-queues, otherwise show ready prompt
+    if (continuousMode) {
+      setTimeout(autoQueueAndReset, 300);
+    } else {
+      setTimeout(showReadyPrompt, 300);
+    }
   } catch (err) {
     hideLoading();
     toast('Failed to process photo: ' + err.message, 'error');
@@ -306,7 +333,29 @@ async function handleScanBack(e) {
 
 function handleSkipBack() {
   stagedBack = null;
-  showReadyPrompt();
+  if (continuousMode) {
+    autoQueueAndReset();
+  } else {
+    showReadyPrompt();
+  }
+}
+
+/** Continuous mode: auto-queue current card and reset wizard immediately */
+function autoQueueAndReset() {
+  if (!stagedFront) return;
+  scanQueue.push({
+    photo: stagedFront,
+    backPhoto: stagedBack,
+    status: 'pending',
+    card: null,
+    error: null
+  });
+  renderScanQueue();
+  updateIdentifyAllButton();
+  document.getElementById('scan-queue-section').classList.remove('hidden');
+  const count = scanQueue.filter(q => q.status === 'pending').length;
+  toast(`Card queued (${count} ready)`, 'success');
+  resetScanWizard();
 }
 
 function showReadyPrompt() {
@@ -932,8 +981,10 @@ function showCardDetail(card) {
     ${card.ebayListingId
       ? `<div class="ebay-listed-badge">Listed on eBay — <a href="${escapeHtml(card.ebayListingUrl || '')}" target="_blank">#${escapeHtml(card.ebayListingId)}</a></div>`
       : ''}
+    ${card.aiGradeData ? renderAiGradeSection(card.aiGradeData) : '<div id="detail-ai-grade-section"></div>'}
     <div class="detail-section" id="detail-comps">
       <h3 style="font-size:15px;font-weight:600;color:var(--gray-700);margin-bottom:8px">Recent Sales</h3>
+      <canvas id="detail-comps-chart" style="margin-bottom:8px"></canvas>
       <div id="detail-comps-loading" style="font-size:13px;color:var(--gray-500);text-align:center;padding:8px 0">Checking sold prices...</div>
       <div id="detail-comps-stats" class="hidden"></div>
       <div id="detail-comps-list" class="hidden"></div>
@@ -951,6 +1002,7 @@ function showCardDetail(card) {
       ${card.status === 'sold' && card.shippingStatus !== 'delivered'
         ? `<button class="btn btn-secondary" id="detail-shipping-btn">${card.shippingStatus === 'shipped' ? 'Update Shipping' : 'Add Shipping'}</button>`
         : ''}
+      ${card.imageBlob && card.graded !== 'Yes' ? '<button class="btn btn-secondary" id="detail-ai-grade-btn">AI Grade</button>' : ''}
       <button class="btn btn-secondary" id="detail-share-btn">Share Card</button>
       ${card.mode === 'collection' ? '<button class="btn btn-secondary" id="detail-duplicate-listing-btn">Duplicate to Listings</button>' : ''}
       <button class="btn btn-secondary" id="detail-move-btn">${card.mode === 'listing' ? 'Move to Collection' : 'Move to Listings'}</button>
@@ -1052,42 +1104,52 @@ function showCardDetail(card) {
     });
   }
 
-  // Share card
+  // Share card (image-based)
   const shareBtn = document.getElementById('detail-share-btn');
   if (shareBtn) {
     shareBtn.addEventListener('click', async () => {
-      const parts = [];
-      if (card.year) parts.push(card.year);
-      if (card.brand) parts.push(card.brand);
-      if (card.setName) parts.push(card.setName);
-      if (card.player) parts.push(card.player);
-      if (card.parallel) parts.push(card.parallel);
-      if (card.cardNumber) parts.push(`#${card.cardNumber}`);
-      const title = parts.join(' ') || 'Trading Card';
-
-      const lines = [title];
-      if (card.team) lines.push(`Team: ${card.team}`);
-      if (card.graded === 'Yes') lines.push(`Grade: ${card.gradeCompany} ${card.gradeValue}`);
-      if (card.estimatedValueLow && card.estimatedValueHigh) {
-        lines.push(`Value: $${card.estimatedValueLow.toFixed(2)} - $${card.estimatedValueHigh.toFixed(2)}`);
-      }
-      const text = lines.join('\n');
-
-      if (navigator.share) {
-        try {
-          await navigator.share({ title, text });
-        } catch {
-          // User cancelled or share failed
-        }
-      } else {
-        // Fallback: copy to clipboard
-        try {
-          await navigator.clipboard.writeText(text);
-          toast('Card info copied to clipboard', 'success');
-        } catch {
-          toast('Could not share or copy', 'error');
+      const { showModal } = await import('./ui.js');
+      try {
+        await shareCard(card, showModal);
+      } catch {
+        // Fallback to text share
+        const parts = [card.year, card.brand, card.setName, card.player, card.parallel].filter(Boolean);
+        const text = parts.join(' ') || 'Trading Card';
+        if (navigator.share) {
+          try { await navigator.share({ title: text, text }); } catch {}
+        } else {
+          try { await navigator.clipboard.writeText(text); toast('Copied to clipboard', 'success'); } catch {}
         }
       }
+    });
+  }
+
+  // AI Grade button
+  const aiGradeBtn = document.getElementById('detail-ai-grade-btn');
+  if (aiGradeBtn) {
+    aiGradeBtn.addEventListener('click', async () => {
+      if (!card.imageBlob) {
+        toast('Card needs a front photo for grading', 'warning');
+        return;
+      }
+      aiGradeBtn.disabled = true;
+      aiGradeBtn.textContent = 'Analyzing...';
+      try {
+        const gradeData = await gradeCard(card.imageBlob, card.imageBackBlob);
+        card.aiGradeData = gradeData;
+        card.lastModified = new Date().toISOString();
+        await db.saveCard(card);
+        // Render grade section
+        const section = document.getElementById('detail-ai-grade-section');
+        if (section) {
+          section.outerHTML = renderAiGradeSection(gradeData);
+        }
+        toast('AI grading complete', 'success');
+      } catch (err) {
+        toast('Grading failed: ' + err.message, 'error');
+      }
+      aiGradeBtn.disabled = false;
+      aiGradeBtn.textContent = 'AI Grade';
     });
   }
 
@@ -1203,6 +1265,76 @@ function showCardDetail(card) {
   showView('view-detail');
 }
 
+/** Render AI grading results section */
+function renderAiGradeSection(data) {
+  if (!data) return '<div id="detail-ai-grade-section"></div>';
+  const overall = data.overallGrade || 0;
+  const gradeColor = overall >= 9 ? 'var(--success)' : overall >= 7 ? 'var(--warning)' : 'var(--danger)';
+  const categories = [
+    { label: 'Centering', score: data.centering?.score || 0, notes: data.centering?.notes || '' },
+    { label: 'Corners', score: data.corners?.score || 0, notes: data.corners?.notes || '' },
+    { label: 'Edges', score: data.edges?.score || 0, notes: data.edges?.notes || '' },
+    { label: 'Surface', score: data.surface?.score || 0, notes: data.surface?.notes || '' },
+  ];
+
+  return `
+    <div class="detail-section" id="detail-ai-grade-section">
+      <h3 style="font-size:15px;font-weight:600;color:var(--gray-700);margin-bottom:12px">AI Pre-Grade</h3>
+      <div class="ai-grade-header">
+        <div class="ai-grade-overall" style="color:${gradeColor}">${overall}</div>
+        <div class="ai-grade-meta">
+          <div class="ai-grade-estimate">${data.estimatedPSA || ''}</div>
+          <div class="ai-grade-confidence">Confidence: ${data.confidence || 'unknown'}</div>
+        </div>
+      </div>
+      <div class="ai-grade-bars">
+        ${categories.map(cat => `
+          <div class="ai-grade-bar-row">
+            <span class="ai-grade-bar-label">${cat.label}</span>
+            <div class="ai-grade-bar-track">
+              <div class="ai-grade-bar-fill" style="width:${cat.score * 10}%;background:${cat.score >= 9 ? 'var(--success)' : cat.score >= 7 ? 'var(--warning)' : 'var(--danger)'}"></div>
+            </div>
+            <span class="ai-grade-bar-score">${cat.score}</span>
+          </div>
+          ${cat.notes ? `<div class="ai-grade-bar-notes">${escapeHtml(cat.notes)}</div>` : ''}
+        `).join('')}
+      </div>
+      ${data.recommendation ? `
+      <div class="ai-grade-recommendation ${data.worthGrading ? 'worth-it' : 'not-worth'}">
+        ${escapeHtml(data.recommendation)}
+      </div>` : ''}
+      ${data.timestamp ? `<div style="font-size:10px;color:var(--gray-400);margin-top:8px;text-align:right">${formatDate(data.timestamp)}</div>` : ''}
+    </div>
+  `;
+}
+
+/** Render comp price scatter chart */
+function renderCompChart(compData) {
+  const canvas = document.getElementById('detail-comps-chart');
+  if (!canvas) return;
+  const items = (compData.items || []).filter(i => i.price && i.soldDate);
+  if (items.length < 2) {
+    canvas.style.display = 'none';
+    return;
+  }
+  canvas.style.display = '';
+  const sorted = [...items].sort((a, b) => new Date(a.soldDate) - new Date(b.soldDate));
+  const data = sorted.map(i => ({ x: i.soldDate, y: i.price }));
+  const xLabels = sorted.map(i => {
+    const d = new Date(i.soldDate);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+  drawLineChart(canvas, {
+    data,
+    showXLabels: true,
+    xLabels,
+    showDots: true,
+    color: '#16a34a',
+    fillColor: 'rgba(22,163,74,0.08)',
+    height: 140,
+  });
+}
+
 function renderDetailComps(card) {
   const section = document.getElementById('detail-comps');
   const loading = document.getElementById('detail-comps-loading');
@@ -1223,10 +1355,32 @@ function renderDetailComps(card) {
 }
 
 function renderDetailCompsData(compData, statsEl, listEl) {
+  // Render price chart
+  renderCompChart(compData);
+
+  // Compute median
+  const prices = (compData.items || []).filter(i => i.price).map(i => i.price).sort((a, b) => a - b);
+  const median = prices.length > 0 ? prices[Math.floor(prices.length / 2)] : null;
+  const volume = prices.length;
+
+  // Compute trend (compare first half avg vs second half avg)
+  let trendIcon = '';
+  if (prices.length >= 4) {
+    const mid = Math.floor(prices.length / 2);
+    const firstHalf = prices.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+    const secondHalf = prices.slice(mid).reduce((a, b) => a + b, 0) / (prices.length - mid);
+    const pctChange = ((secondHalf - firstHalf) / firstHalf) * 100;
+    if (pctChange > 5) trendIcon = '<span class="trend-badge trend-up">&#9650; Up</span>';
+    else if (pctChange < -5) trendIcon = '<span class="trend-badge trend-down">&#9660; Down</span>';
+    else trendIcon = '<span class="trend-badge trend-stable">&#9654; Stable</span>';
+  }
+
   // Stats row
   const parts = [];
   if (compData.avg) parts.push(`<div class="detail-comps-stat"><div class="detail-comps-stat-value">$${Number(compData.avg).toFixed(2)}</div><div class="detail-comps-stat-label">Average</div></div>`);
+  if (median) parts.push(`<div class="detail-comps-stat"><div class="detail-comps-stat-value">$${median.toFixed(2)}</div><div class="detail-comps-stat-label">Median</div></div>`);
   if (compData.low && compData.high) parts.push(`<div class="detail-comps-stat"><div class="detail-comps-stat-value">$${Number(compData.low).toFixed(2)} – $${Number(compData.high).toFixed(2)}</div><div class="detail-comps-stat-label">Range</div></div>`);
+  if (volume > 0) parts.push(`<div class="detail-comps-stat"><div class="detail-comps-stat-value">${volume} ${trendIcon}</div><div class="detail-comps-stat-label">Sales</div></div>`);
 
   if (parts.length > 0) {
     statsEl.innerHTML = `<div class="detail-comps-stats">${parts.join('')}</div>`;
@@ -1292,6 +1446,21 @@ async function fetchAndUpdateDetailComps(card) {
     items: result.items,
     fetchedAt: new Date().toISOString()
   };
+
+  // Append comp history snapshot (max 90 entries)
+  if (!card.compHistory) card.compHistory = [];
+  const today = new Date().toISOString().split('T')[0];
+  const lastEntry = card.compHistory[card.compHistory.length - 1];
+  if (!lastEntry || lastEntry.date !== today) {
+    card.compHistory.push({
+      date: today,
+      avg: result.stats.average,
+      low: result.stats.low,
+      high: result.stats.high,
+      volume: (result.items || []).length
+    });
+    if (card.compHistory.length > 90) card.compHistory = card.compHistory.slice(-90);
+  }
 
   // Save locally (no sync event)
   try { await db.saveCardLocal(card); } catch {}
@@ -2196,6 +2365,14 @@ function renderScanQueue() {
   const container = document.getElementById('scan-queue');
   if (!container) return;
 
+  // Update queue count
+  const countEl = document.getElementById('scan-queue-count');
+  if (countEl) {
+    const pending = scanQueue.filter(q => q.status === 'pending').length;
+    const total = scanQueue.length;
+    countEl.textContent = `${total} card${total !== 1 ? 's' : ''} queued${pending !== total ? ` (${pending} ready)` : ''}`;
+  }
+
   if (scanQueue.length === 0) {
     container.innerHTML = '';
     document.getElementById('scan-queue-section').classList.add('hidden');
@@ -2334,6 +2511,12 @@ async function handleIdentifyAll() {
       await refreshListings();
       await refreshCollection();
       await loadRecentScans();
+
+      // Show batch review carousel if multiple cards were identified
+      const identified = scanQueue.filter(q => q.status === 'done' && q.card);
+      if (identified.length > 1) {
+        showBatchReviewCarousel(identified);
+      }
     } else {
       toast('All cards failed to identify. Check your API key and try again.', 'error');
     }
@@ -2342,5 +2525,75 @@ async function handleIdentifyAll() {
   }
 
   updateIdentifyAllButton();
+}
+
+// ===== Batch Review Carousel =====
+
+function showBatchReviewCarousel(items) {
+  let currentIdx = 0;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'batch-review-overlay';
+  overlay.innerHTML = `
+    <div class="batch-review-card">
+      <div class="batch-review-header">
+        <h3>Review Cards</h3>
+        <span class="batch-review-counter" id="batch-review-counter">1 / ${items.length}</span>
+      </div>
+      <div class="batch-review-body" id="batch-review-body"></div>
+      <div class="batch-review-actions">
+        <button class="btn btn-secondary btn-sm" id="batch-review-prev" disabled>Previous</button>
+        <button class="btn btn-primary btn-sm" id="batch-review-edit">Edit</button>
+        <button class="btn btn-secondary btn-sm" id="batch-review-next">Next</button>
+      </div>
+      <button class="btn btn-primary" id="batch-review-done" style="width:100%;margin-top:12px">Done</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function render() {
+    const item = items[currentIdx];
+    const card = item.card;
+    const body = document.getElementById('batch-review-body');
+    const counter = document.getElementById('batch-review-counter');
+    counter.textContent = `${currentIdx + 1} / ${items.length}`;
+    document.getElementById('batch-review-prev').disabled = currentIdx === 0;
+    document.getElementById('batch-review-next').disabled = currentIdx >= items.length - 1;
+
+    body.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        ${card.imageThumbnail ? `<img src="${card.imageThumbnail}" style="width:80px;height:100px;object-fit:cover;border-radius:8px;flex-shrink:0">` : ''}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px;margin-bottom:4px">${escapeHtml(card.player || 'Unknown')}</div>
+          <div style="font-size:13px;color:var(--gray-500)">${escapeHtml([card.year, card.brand, card.setName].filter(Boolean).join(' '))}</div>
+          ${card.parallel ? `<div style="font-size:13px;color:var(--gray-500)">${escapeHtml(card.parallel)}</div>` : ''}
+          ${card.cardNumber ? `<div style="font-size:13px;color:var(--gray-500)">#${escapeHtml(card.cardNumber)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  document.getElementById('batch-review-prev').addEventListener('click', () => {
+    if (currentIdx > 0) { currentIdx--; render(); }
+  });
+  document.getElementById('batch-review-next').addEventListener('click', () => {
+    if (currentIdx < items.length - 1) { currentIdx++; render(); }
+  });
+  document.getElementById('batch-review-edit').addEventListener('click', () => {
+    const card = items[currentIdx].card;
+    overlay.remove();
+    currentCard = card;
+    populateReviewForm(card);
+    showView('view-review');
+  });
+  document.getElementById('batch-review-done').addEventListener('click', () => {
+    overlay.remove();
+    // Clear completed items from queue
+    scanQueue = scanQueue.filter(q => q.status !== 'done');
+    renderScanQueue();
+    updateIdentifyAllButton();
+  });
+
+  render();
 }
 

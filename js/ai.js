@@ -564,6 +564,163 @@ function classifyLabColor(lab) {
   return { name: bestName, confidence };
 }
 
+/**
+ * AI Pre-Grading Analysis — analyze card photos for grading potential.
+ * Uses the same Claude Vision API as identifyCard but with a specialized grading prompt.
+ *
+ * @param {string} frontBase64 - data URI for front image (required)
+ * @param {string|null} backBase64 - data URI for back image (optional but recommended)
+ * @returns {Object} grading results with scores per category, overall grade, recommendation
+ */
+export async function gradeCard(frontBase64, backBase64 = null) {
+  let apiKey = await getSetting('apiKey');
+  if (!apiKey) {
+    try { apiKey = localStorage.getItem('cw_apiKey'); } catch {}
+  }
+  if (!apiKey) {
+    throw new Error('API key not set. Please add your Claude API key in Settings.');
+  }
+
+  const frontContent = stripDataUri(frontBase64);
+  const contentBlocks = [];
+
+  contentBlocks.push({ type: 'text', text: 'FRONT OF CARD:' });
+  contentBlocks.push({
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/jpeg', data: frontContent }
+  });
+
+  if (backBase64) {
+    contentBlocks.push({ type: 'text', text: 'BACK OF CARD:' });
+    contentBlocks.push({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: stripDataUri(backBase64) }
+    });
+  }
+
+  const gradingPrompt = `You are an expert sports card grader with years of experience at PSA, BGS, and SGC. Analyze these card images and provide a detailed pre-grading assessment.
+
+Evaluate the following categories on a 1-10 scale (matching PSA's grading scale where 10=Gem Mint, 9=Mint, 8=NM-MT, 7=NM):
+
+## Categories to Evaluate
+
+**Centering**: Examine the borders on all four sides.
+- Measure left/right centering ratio (e.g., 50/50, 55/45, 60/40)
+- Measure top/bottom centering ratio
+- PSA allows 55/45 for a 10, 60/40 for a 9, 65/35 for an 8
+
+**Corners**: Examine all 4 corners individually.
+- Look for any whitening, wear, dings, or softness
+- Note which corners (if any) show issues
+
+**Edges**: Examine all 4 edges.
+- Look for whitening, chipping, roughness, or any damage along each edge
+- Note which edges (if any) show issues
+
+**Surface**: Examine the entire card surface.
+- Look for scratches, print defects, staining, wax residue, roller marks, focus issues
+- Note any specific defects found
+
+## Output Format
+Output ONLY a JSON object — no commentary, no code fences:
+
+{
+  "centering": {
+    "score": 8,
+    "leftRight": "52/48",
+    "topBottom": "55/45",
+    "notes": "Slightly off-center to the left"
+  },
+  "corners": {
+    "score": 9,
+    "topLeft": "Sharp",
+    "topRight": "Sharp",
+    "bottomLeft": "Sharp",
+    "bottomRight": "Minor softness",
+    "notes": "Three corners are sharp, bottom-right shows very minor softness"
+  },
+  "edges": {
+    "score": 9,
+    "top": "Clean",
+    "bottom": "Clean",
+    "left": "Clean",
+    "right": "Minor whitening",
+    "notes": "Edges are clean with very minor whitening on right edge"
+  },
+  "surface": {
+    "score": 9,
+    "notes": "Clean surface with no visible scratches or print defects"
+  },
+  "overallGrade": 9,
+  "confidence": "high",
+  "recommendation": "This card is likely to grade PSA 9. Centering is the weakest category. Worth grading if raw value is significantly less than graded value.",
+  "estimatedPSA": "PSA 9",
+  "worthGrading": true
+}
+
+## Rules
+- Be conservative — it's better to under-estimate than over-estimate
+- If image quality is poor, lower your confidence level
+- The overall grade should be weighted: Centering 10%, Corners 30%, Edges 30%, Surface 30%
+- "worthGrading" should be true only if the card likely grades 8+ and is a card that benefits from grading
+- Set confidence to "high", "medium", or "low" based on image quality and your certainty`;
+
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: FALLBACK_MODEL,
+      max_tokens: 1024,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            ...contentBlocks,
+            { type: 'text', text: gradingPrompt }
+          ]
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Invalid API key.');
+    }
+    if (response.status === 429) {
+      throw new Error('Rate limited. Please wait a moment and try again.');
+    }
+    throw new Error(`API error (${response.status})`);
+  }
+
+  const result = await response.json();
+  const text = result.content[0].text;
+
+  // Parse JSON from response
+  const stripped = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+  let gradeData;
+
+  try { gradeData = JSON.parse(stripped); } catch {
+    const braceMatch = stripped.match(/\{[\s\S]*\}/);
+    if (braceMatch) {
+      try { gradeData = JSON.parse(braceMatch[0]); } catch {}
+    }
+  }
+
+  if (!gradeData) {
+    throw new Error('Could not parse grading data from AI response.');
+  }
+
+  gradeData.timestamp = new Date().toISOString();
+  return gradeData;
+}
+
 function normalizeCardData(cardData) {
   // Ensure attributes is always an array
   if (typeof cardData.attributes === 'string') {
