@@ -73,6 +73,25 @@ export async function initSettings() {
     window.dispatchEvent(new CustomEvent('settings-changed'));
   });
 
+  // Refresh all sold prices / comps
+  $('#btn-refresh-comps').addEventListener('click', async () => {
+    if (typeof refreshAllComps !== 'function') {
+      toast('Refresh not available', 'error');
+      return;
+    }
+    toast('Refreshing sold prices for all cards...', 'info');
+    $('#btn-refresh-comps').disabled = true;
+    $('#btn-refresh-comps').textContent = 'Refreshing...';
+    try {
+      await refreshAllComps(true);
+      toast('Sold prices refreshed', 'success');
+    } catch {
+      toast('Refresh failed', 'error');
+    }
+    $('#btn-refresh-comps').disabled = false;
+    $('#btn-refresh-comps').textContent = 'Refresh All Sold Prices';
+  });
+
   // Export data
   $('#btn-export-data').addEventListener('click', async () => {
     try {

@@ -1305,7 +1305,7 @@ async function fetchAndUpdateDetailComps(card) {
 // ===== Background Comp Refresher =====
 
 const COMP_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-const COMP_STALE_AGE = 0; // TEMP: force refresh all comps
+const COMP_STALE_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 const COMP_CALL_DELAY = 2000; // 2s between calls
 
 function initCompRefresher() {
@@ -1315,7 +1315,7 @@ function initCompRefresher() {
   setInterval(() => refreshAllComps(), COMP_REFRESH_INTERVAL);
 }
 
-async function refreshAllComps() {
+async function refreshAllComps(force = false) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
   if (!workerUrl) {
     console.log('[Comps] No worker URL configured, skipping refresh');
@@ -1332,6 +1332,7 @@ async function refreshAllComps() {
 
   // Filter to cards that need a refresh (no data, or stale)
   const needsRefresh = searchable.filter(c => {
+    if (force) return true;
     if (!c.compData || !c.compData.fetchedAt) return true;
     const age = Date.now() - new Date(c.compData.fetchedAt).getTime();
     return age >= COMP_STALE_AGE;
@@ -1502,7 +1503,11 @@ function buildExcludeParam(card) {
     'wave', 'ice', 'shimmer', 'sparkle', 'cracked ice',
     'rated rookie', 'press proof', 'die-cut', 'auto', 'autograph',
     'patch', 'relic', 'jersey', 'memorabilia', 'sp ', 'ssp',
-    'case hit', 'downtown', 'kaboom', 'color blast'
+    'case hit', 'downtown', 'kaboom', 'color blast',
+    'throwback', 'vortex', 'the rookies', 'elite series',
+    'aqua', 'hyper', 'pandora', 'glitter', 'emoji',
+    'lazer', 'laser', 'neon', 'camo', 'snakeskin', 'marble',
+    'color match', 'astro'
   ];
   // Combine all card metadata into one lowercase string
   const ownMeta = [
