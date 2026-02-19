@@ -1486,10 +1486,10 @@ async function fetchCompsForCard(card) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
   if (!workerUrl) return null;
 
-  // Use the eBay listing title for the most precise search
-  const query = card.ebayTitle || [
+  // Use structured fields for 130point search (eBay titles have too much noise)
+  const query = [
     card.year, card.brand, card.setName,
-    card.player, card.parallel, card.cardNumber ? `#${card.cardNumber}` : ''
+    card.player, card.parallel
   ].filter(Boolean).join(' ');
   if (!query.trim()) return null;
 
