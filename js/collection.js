@@ -194,6 +194,9 @@ function renderEmptyState() {
 }
 
 function formatValue(card) {
+  if (card.compData?.avg) {
+    return `~$${Number(card.compData.avg).toFixed(0)}`;
+  }
   if (card.estimatedValueLow && card.estimatedValueHigh) {
     return `$${Number(card.estimatedValueLow).toFixed(0)}-$${Number(card.estimatedValueHigh).toFixed(0)}`;
   }
