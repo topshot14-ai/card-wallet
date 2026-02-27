@@ -175,6 +175,13 @@ export async function getActiveListings() {
   return cards.filter(c => c.ebayListingId && c.status !== 'deleted');
 }
 
+/** Get all cards that have ever been listed on eBay (have an ebayListingId) */
+export async function getAllListingHistory() {
+  const store = await tx(CARDS_STORE);
+  const all = await promisifyRequest(store.getAll());
+  return all.filter(c => c.ebayListingId && c.status !== 'deleted');
+}
+
 /**
  * One-time migration: move non-active listing cards to collection.
  * Cards with status='listed' stay as mode='listing'.

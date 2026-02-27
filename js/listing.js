@@ -1,20 +1,24 @@
-// Active eBay Listings Tracker — shows live data for cards listed on eBay
+// eBay Listings Tracker — shows live data for cards listed on eBay
 
 import * as db from './db.js';
 import { toast, $, escapeHtml } from './ui.js';
 import { cardDisplayName, cardDetailLine } from './card-model.js';
 
-let activeCards = [];
+let allCards = [];       // all cards with an ebayListingId
+let filteredCards = [];  // after applying status filter
 let liveData = new Map(); // ebayListingId → eBay Browse API data
 let autoRefreshTimer = null;
 let countdownTimer = null;
 let lastFetchedAt = null;
 let currentSort = 'ending-asc';
+let currentFilter = 'active';
 
-// Restore saved sort preference
+// Restore saved preferences
 try {
   const savedSort = localStorage.getItem('cw_listingsSort');
   if (savedSort) currentSort = savedSort;
+  const savedFilter = localStorage.getItem('cw_listingsFilter');
+  if (savedFilter) currentFilter = savedFilter;
 } catch {}
 
 export async function initListings() {
@@ -48,7 +52,24 @@ export async function initListings() {
     sortEl.addEventListener('change', (e) => {
       currentSort = e.target.value;
       try { localStorage.setItem('cw_listingsSort', currentSort); } catch {}
-      render();
+      applyFilterAndRender();
+    });
+  }
+
+  // Filter pills
+  const pillsContainer = $('#listings-filter-pills');
+  if (pillsContainer) {
+    // Set initial active pill
+    pillsContainer.querySelectorAll('.pill').forEach(p => {
+      p.classList.toggle('active', p.dataset.filter === currentFilter);
+    });
+    pillsContainer.addEventListener('click', (e) => {
+      const pill = e.target.closest('.pill');
+      if (!pill) return;
+      currentFilter = pill.dataset.filter;
+      try { localStorage.setItem('cw_listingsFilter', currentFilter); } catch {}
+      pillsContainer.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.filter === currentFilter));
+      applyFilterAndRender();
     });
   }
 
@@ -65,17 +86,51 @@ export async function initListings() {
 }
 
 export async function refreshListings() {
-  activeCards = await db.getActiveListings();
+  allCards = await db.getAllListingHistory();
 
-  render();
+  applyFilterAndRender();
 
-  // Fetch live data if we have active listings
+  // Fetch live data for active listings
+  const activeCards = allCards.filter(c => c.status === 'listed');
   if (activeCards.length > 0) {
-    await fetchLiveData();
+    await fetchLiveData(activeCards);
   }
 }
 
-async function fetchLiveData() {
+function applyFilterAndRender() {
+  if (currentFilter === 'all') {
+    filteredCards = [...allCards];
+  } else if (currentFilter === 'active') {
+    filteredCards = allCards.filter(c => c.status === 'listed');
+  } else if (currentFilter === 'sold') {
+    filteredCards = allCards.filter(c => c.status === 'sold');
+  } else if (currentFilter === 'unsold') {
+    filteredCards = allCards.filter(c => c.status === 'unsold');
+  }
+
+  // Update pill counts
+  updatePillCounts();
+  render();
+}
+
+function updatePillCounts() {
+  const counts = { active: 0, sold: 0, unsold: 0, all: allCards.length };
+  for (const c of allCards) {
+    if (c.status === 'listed') counts.active++;
+    else if (c.status === 'sold') counts.sold++;
+    else if (c.status === 'unsold') counts.unsold++;
+  }
+  const pillsContainer = $('#listings-filter-pills');
+  if (!pillsContainer) return;
+  pillsContainer.querySelectorAll('.pill').forEach(p => {
+    const f = p.dataset.filter;
+    const count = counts[f] ?? 0;
+    const labels = { active: 'Active', sold: 'Sold', unsold: 'Unsold', all: 'All' };
+    p.textContent = `${labels[f]} (${count})`;
+  });
+}
+
+async function fetchLiveData(activeCards) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
   if (!workerUrl) return;
 
@@ -106,7 +161,7 @@ async function fetchLiveData() {
 
     // Move ended listings to collection as unsold
     for (const endedId of endedIds) {
-      const card = activeCards.find(c => c.ebayListingId === endedId);
+      const card = allCards.find(c => c.ebayListingId === endedId);
       if (card) {
         card.status = 'unsold';
         card.mode = 'collection';
@@ -116,12 +171,11 @@ async function fetchLiveData() {
     }
 
     if (endedIds.length > 0) {
-      activeCards = activeCards.filter(c => !endedIds.includes(c.ebayListingId));
       toast(`${endedIds.length} listing${endedIds.length > 1 ? 's' : ''} ended — moved to collection`, 'info');
       window.dispatchEvent(new CustomEvent('refresh-collection'));
     }
 
-    render();
+    applyFilterAndRender();
     startCountdownTimers();
   } catch (err) {
     console.error('[Listings] Fetch error:', err);
@@ -133,8 +187,9 @@ async function fetchLiveData() {
 function startAutoRefresh() {
   stopAutoRefresh();
   autoRefreshTimer = setInterval(() => {
+    const activeCards = allCards.filter(c => c.status === 'listed');
     if (activeCards.length > 0) {
-      fetchLiveData();
+      fetchLiveData(activeCards);
     }
   }, 5 * 60 * 1000); // 5 minutes
 }
@@ -204,7 +259,7 @@ function renderRefreshStatus(offline = false) {
 }
 
 function sortListings() {
-  activeCards.sort((a, b) => {
+  filteredCards.sort((a, b) => {
     const liveA = liveData.get(a.ebayListingId);
     const liveB = liveData.get(b.ebayListingId);
 
@@ -217,8 +272,8 @@ function sortListings() {
       }
       case 'price-asc':
       case 'price-desc': {
-        const priceA = Number(liveA?.currentBidPrice?.value ?? liveA?.price?.value ?? a.startPrice ?? 0);
-        const priceB = Number(liveB?.currentBidPrice?.value ?? liveB?.price?.value ?? b.startPrice ?? 0);
+        const priceA = Number(liveA?.currentBidPrice?.value ?? liveA?.price?.value ?? a.soldPrice ?? a.startPrice ?? 0);
+        const priceB = Number(liveB?.currentBidPrice?.value ?? liveB?.price?.value ?? b.soldPrice ?? b.startPrice ?? 0);
         return currentSort === 'price-asc' ? priceA - priceB : priceB - priceA;
       }
       case 'bids-desc': {
@@ -245,23 +300,34 @@ function render() {
   renderRefreshStatus();
   sortListings();
 
-  if (activeCards.length === 0) {
+  const emptyMessages = {
+    active: { icon: '&#128179;', title: 'No active listings', desc: 'Use Quick List mode to list cards on eBay.' },
+    sold: { icon: '&#128176;', title: 'No sold listings', desc: 'Sold items will appear here once marked as sold.' },
+    unsold: { icon: '&#128230;', title: 'No unsold listings', desc: 'Ended listings that didn\'t sell will appear here.' },
+    all: { icon: '&#128179;', title: 'No listings yet', desc: 'Use Quick List mode to list cards on eBay.' },
+  };
+
+  if (filteredCards.length === 0) {
+    const msg = emptyMessages[currentFilter] || emptyMessages.all;
     container.innerHTML = `<div class="empty-state-rich">
-      <div class="empty-state-icon">&#128179;</div>
-      <div class="empty-state-title">No active listings</div>
-      <div class="empty-state-desc">Use Quick List mode to list cards on eBay.</div>
+      <div class="empty-state-icon">${msg.icon}</div>
+      <div class="empty-state-title">${msg.title}</div>
+      <div class="empty-state-desc">${msg.desc}</div>
     </div>`;
     return;
   }
 
-  container.innerHTML = activeCards.map(card => {
+  container.innerHTML = filteredCards.map(card => {
     const live = liveData.get(card.ebayListingId);
     const isAuction = live ? live.buyingOptions?.includes('AUCTION') : false;
     const isBuyNow = live ? live.buyingOptions?.includes('FIXED_PRICE') : false;
+    const isActive = card.status === 'listed';
 
     // Price display
     let priceHtml = '';
-    if (live) {
+    if (card.status === 'sold' && card.soldPrice) {
+      priceHtml = `<span class="listing-live-price sold-price">$${Number(card.soldPrice).toFixed(2)}</span>`;
+    } else if (live) {
       if (isAuction && live.currentBidPrice) {
         priceHtml = `<span class="listing-live-price bid-price">$${Number(live.currentBidPrice.value).toFixed(2)}</span>`;
       } else if (live?.price) {
@@ -271,9 +337,17 @@ function render() {
       priceHtml = `<span class="listing-live-price local">$${Number(card.startPrice).toFixed(2)}</span>`;
     }
 
-    // Format badge
+    // Status badge
+    let statusBadge = '';
+    if (card.status === 'sold') {
+      statusBadge = '<span class="listing-status-badge sold">Sold</span>';
+    } else if (card.status === 'unsold') {
+      statusBadge = '<span class="listing-status-badge unsold">Unsold</span>';
+    }
+
+    // Format badge (only for active)
     let formatBadge = '';
-    if (live) {
+    if (isActive && live) {
       if (isAuction) {
         formatBadge = '<span class="listing-format-badge auction">Auction</span>';
       } else if (isBuyNow) {
@@ -281,17 +355,24 @@ function render() {
       }
     }
 
-    // Bid count
+    // Bid count (only for active auctions)
     const bidCount = live?.bidCount || 0;
-    const bidHtml = isAuction ? `<span class="listing-bid-count">${bidCount} bid${bidCount !== 1 ? 's' : ''}</span>` : '';
+    const bidHtml = isActive && isAuction ? `<span class="listing-bid-count">${bidCount} bid${bidCount !== 1 ? 's' : ''}</span>` : '';
 
-    // Countdown
+    // Countdown (only for active)
     let countdownHtml = '';
-    if (live?.itemEndDate) {
+    if (isActive && live?.itemEndDate) {
       const end = new Date(live.itemEndDate);
       const diff = end - new Date();
       const urgentClass = diff < 3600000 ? ' urgent' : '';
       countdownHtml = `<span class="listing-countdown${urgentClass}" data-end="${live.itemEndDate}">${formatCountdown(Math.max(0, diff))}</span>`;
+    }
+
+    // Ended date for sold/unsold
+    let endedDateHtml = '';
+    if (!isActive && card.lastModified) {
+      const d = new Date(card.lastModified);
+      endedDateHtml = `<span class="listing-ended-date">${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>`;
     }
 
     // Avg sold price from comp data
@@ -302,7 +383,7 @@ function render() {
     const ebayUrl = card.ebayListingUrl || (live?.itemWebUrl) || `https://www.ebay.com/itm/${card.ebayListingId}`;
 
     return `
-      <div class="active-listing-card" data-id="${card.id}">
+      <div class="active-listing-card${!isActive ? ' ended' : ''}" data-id="${card.id}">
         <div class="active-listing-thumb">
           ${card.imageThumbnail
             ? `<img src="${card.imageThumbnail}" alt="Card" loading="lazy">`
@@ -312,7 +393,7 @@ function render() {
           <div class="active-listing-title">${escapeHtml(card.ebayTitle || cardDisplayName(card))}</div>
           <div class="active-listing-meta">${escapeHtml(cardDetailLine(card))}</div>
           <div class="active-listing-badges">
-            ${formatBadge}${bidHtml}${countdownHtml}
+            ${statusBadge}${formatBadge}${bidHtml}${countdownHtml}${endedDateHtml}
           </div>
         </div>
         <div class="active-listing-price-col">

@@ -413,15 +413,21 @@
   </div>
 
   <!-- ===== ACTIVE LISTINGS VIEW ===== -->
-  <div id="view-listings" class="view" role="main" aria-label="Active Listings">
+  <div id="view-listings" class="view" role="main" aria-label="Listings">
     <header class="view-header">
-      <h1>Active Listings</h1>
+      <h1>Listings</h1>
       <button id="btn-refresh-listings" class="header-btn" aria-label="Refresh listings">&#x21bb;</button>
     </header>
     <div class="view-content">
       <div class="listings-refresh-status" id="listings-refresh-status">
         <span id="listings-last-refreshed">Not yet refreshed</span>
         <span id="listings-auto-badge" class="auto-refresh-badge">Auto-refresh: 5min</span>
+      </div>
+      <div class="filter-pills" id="listings-filter-pills">
+        <button class="pill active" data-filter="active">Active</button>
+        <button class="pill" data-filter="sold">Sold</button>
+        <button class="pill" data-filter="unsold">Unsold</button>
+        <button class="pill" data-filter="all">All</button>
       </div>
       <div class="sort-row">
           <select id="listings-sort">
@@ -698,7 +704,7 @@
       </svg>
       <span>Dashboard</span>
     </button>
-    <button class="tab" data-view="listings" aria-label="Active listings">
+    <button class="tab" data-view="listings" aria-label="Listings">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
         <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
