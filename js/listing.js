@@ -138,18 +138,26 @@ async function fetchLiveData(cards) {
   if (ids.length === 0) return;
 
   try {
-    const resp = await fetch(`${workerUrl}/active-listings?ids=${ids.join(',')}`);
-    if (!resp.ok) {
-      console.error('[Listings] Failed to fetch live data:', resp.status);
-      return;
+    // Batch IDs into groups of 10 to avoid worker timeout
+    const BATCH_SIZE = 10;
+    const allListings = [];
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const batch = ids.slice(i, i + BATCH_SIZE);
+      const resp = await fetch(`${workerUrl}/active-listings?ids=${batch.join(',')}`);
+      if (!resp.ok) {
+        console.error('[Listings] Failed to fetch batch:', resp.status);
+        continue;
+      }
+      const data = await resp.json();
+      if (data.fetchedAt) lastFetchedAt = new Date(data.fetchedAt);
+      allListings.push(...(data.listings || []));
     }
 
-    const data = await resp.json();
-    lastFetchedAt = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
+    if (!lastFetchedAt) lastFetchedAt = new Date();
 
     // Determine correct status for each listing based on live eBay data
     const changedCards = [];
-    for (const listing of (data.listings || [])) {
+    for (const listing of allListings) {
       const card = allCards.find(c => c.ebayListingId === listing.legacyItemId);
       if (!card) continue;
 
