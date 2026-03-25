@@ -148,30 +148,63 @@ async function fetchLiveData(activeCards) {
     lastFetchedAt = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
 
     // Update live data map and handle ended listings
-    const endedIds = [];
+    const soldCards = [];
+    const unsoldCards = [];
     for (const listing of (data.listings || [])) {
       if (listing.error && listing.status === 404) {
-        endedIds.push(listing.legacyItemId);
+        // 404 = listing gone from eBay, treat as unsold (no bid data available)
+        const card = allCards.find(c => c.ebayListingId === listing.legacyItemId);
+        if (card && card.status === 'listed') {
+          unsoldCards.push(card);
+        }
         continue;
       }
       if (!listing.error && listing.legacyItemId) {
         liveData.set(listing.legacyItemId, listing);
+
+        // Check if listing has ended by comparing itemEndDate to now
+        if (listing.itemEndDate) {
+          const endDate = new Date(listing.itemEndDate);
+          if (endDate <= new Date()) {
+            const card = allCards.find(c => c.ebayListingId === listing.legacyItemId);
+            if (card && card.status === 'listed') {
+              const bidCount = listing.bidCount || 0;
+              if (bidCount > 0) {
+                // Has bids = sold at current bid price
+                const soldPrice = listing.currentBidPrice?.value || listing.price?.value || 0;
+                card.soldPrice = Number(soldPrice);
+                soldCards.push(card);
+              } else {
+                unsoldCards.push(card);
+              }
+            }
+          }
+        }
       }
     }
 
-    // Move ended listings to collection as unsold
-    for (const endedId of endedIds) {
-      const card = allCards.find(c => c.ebayListingId === endedId);
-      if (card) {
-        card.status = 'unsold';
-        card.mode = 'collection';
-        card.lastModified = new Date().toISOString();
-        await db.saveCard(card);
-      }
+    // Mark sold listings
+    for (const card of soldCards) {
+      card.status = 'sold';
+      card.mode = 'collection';
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
     }
 
-    if (endedIds.length > 0) {
-      toast(`${endedIds.length} listing${endedIds.length > 1 ? 's' : ''} ended — moved to collection`, 'info');
+    // Mark unsold listings
+    for (const card of unsoldCards) {
+      card.status = 'unsold';
+      card.mode = 'collection';
+      card.lastModified = new Date().toISOString();
+      await db.saveCard(card);
+    }
+
+    const totalEnded = soldCards.length + unsoldCards.length;
+    if (totalEnded > 0) {
+      const parts = [];
+      if (soldCards.length > 0) parts.push(`${soldCards.length} sold`);
+      if (unsoldCards.length > 0) parts.push(`${unsoldCards.length} unsold`);
+      toast(`Listings ended: ${parts.join(', ')}`, 'info');
       window.dispatchEvent(new CustomEvent('refresh-collection'));
     }
 
