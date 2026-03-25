@@ -90,10 +90,10 @@ export async function refreshListings() {
 
   applyFilterAndRender();
 
-  // Fetch live data for active listings
-  const activeCards = allCards.filter(c => c.status === 'listed');
-  if (activeCards.length > 0) {
-    await fetchLiveData(activeCards);
+  // Fetch live data for ALL listings to sync statuses correctly
+  const cardsWithListingId = allCards.filter(c => c.ebayListingId);
+  if (cardsWithListingId.length > 0) {
+    await fetchLiveData(cardsWithListingId);
   }
 }
 
@@ -130,11 +130,11 @@ function updatePillCounts() {
   });
 }
 
-async function fetchLiveData(activeCards) {
+async function fetchLiveData(cards) {
   const workerUrl = await db.getSetting('ebayWorkerUrl');
   if (!workerUrl) return;
 
-  const ids = activeCards.map(c => c.ebayListingId).filter(Boolean);
+  const ids = cards.map(c => c.ebayListingId).filter(Boolean);
   if (ids.length === 0) return;
 
   try {
@@ -147,64 +147,70 @@ async function fetchLiveData(activeCards) {
     const data = await resp.json();
     lastFetchedAt = data.fetchedAt ? new Date(data.fetchedAt) : new Date();
 
-    // Update live data map and handle ended listings
-    const soldCards = [];
-    const unsoldCards = [];
+    // Determine correct status for each listing based on live eBay data
+    const changedCards = [];
     for (const listing of (data.listings || [])) {
+      const card = allCards.find(c => c.ebayListingId === listing.legacyItemId);
+      if (!card) continue;
+
       if (listing.error && listing.status === 404) {
-        // 404 = listing gone from eBay, treat as unsold (no bid data available)
-        const card = allCards.find(c => c.ebayListingId === listing.legacyItemId);
-        if (card && card.status === 'listed') {
-          unsoldCards.push(card);
+        // 404 = listing gone from eBay — unsold (no bid data available)
+        if (card.status !== 'unsold') {
+          card.status = 'unsold';
+          card.mode = 'collection';
+          changedCards.push(card);
         }
         continue;
       }
+
       if (!listing.error && listing.legacyItemId) {
         liveData.set(listing.legacyItemId, listing);
 
-        // Check if listing has ended by comparing itemEndDate to now
-        if (listing.itemEndDate) {
-          const endDate = new Date(listing.itemEndDate);
-          if (endDate <= new Date()) {
-            const card = allCards.find(c => c.ebayListingId === listing.legacyItemId);
-            if (card && card.status === 'listed') {
-              const bidCount = listing.bidCount || 0;
-              if (bidCount > 0) {
-                // Has bids = sold at current bid price
-                const soldPrice = listing.currentBidPrice?.value || listing.price?.value || 0;
-                card.soldPrice = Number(soldPrice);
-                soldCards.push(card);
-              } else {
-                unsoldCards.push(card);
-              }
-            }
+        const endDate = listing.itemEndDate ? new Date(listing.itemEndDate) : null;
+        const ended = endDate && endDate <= new Date();
+        const bidCount = listing.bidCount || 0;
+
+        if (ended && bidCount > 0) {
+          // Ended with bids = sold
+          if (card.status !== 'sold') {
+            card.soldPrice = Number(listing.currentBidPrice?.value || listing.price?.value || 0);
+            card.status = 'sold';
+            card.mode = 'collection';
+            changedCards.push(card);
+          }
+        } else if (ended && bidCount === 0) {
+          // Ended with no bids = unsold
+          if (card.status !== 'unsold') {
+            card.status = 'unsold';
+            card.mode = 'collection';
+            changedCards.push(card);
+          }
+        } else if (!ended) {
+          // Still active
+          if (card.status !== 'listed') {
+            card.status = 'listed';
+            card.mode = 'listing';
+            changedCards.push(card);
           }
         }
       }
     }
 
-    // Mark sold listings
-    for (const card of soldCards) {
-      card.status = 'sold';
-      card.mode = 'collection';
+    // Save all changed cards
+    for (const card of changedCards) {
       card.lastModified = new Date().toISOString();
       await db.saveCard(card);
     }
 
-    // Mark unsold listings
-    for (const card of unsoldCards) {
-      card.status = 'unsold';
-      card.mode = 'collection';
-      card.lastModified = new Date().toISOString();
-      await db.saveCard(card);
-    }
-
-    const totalEnded = soldCards.length + unsoldCards.length;
-    if (totalEnded > 0) {
+    if (changedCards.length > 0) {
+      const sold = changedCards.filter(c => c.status === 'sold').length;
+      const unsold = changedCards.filter(c => c.status === 'unsold').length;
+      const reactivated = changedCards.filter(c => c.status === 'listed').length;
       const parts = [];
-      if (soldCards.length > 0) parts.push(`${soldCards.length} sold`);
-      if (unsoldCards.length > 0) parts.push(`${unsoldCards.length} unsold`);
-      toast(`Listings ended: ${parts.join(', ')}`, 'info');
+      if (sold > 0) parts.push(`${sold} sold`);
+      if (unsold > 0) parts.push(`${unsold} unsold`);
+      if (reactivated > 0) parts.push(`${reactivated} reactivated`);
+      toast(`Listings updated: ${parts.join(', ')}`, 'info');
       window.dispatchEvent(new CustomEvent('refresh-collection'));
     }
 
@@ -220,9 +226,9 @@ async function fetchLiveData(activeCards) {
 function startAutoRefresh() {
   stopAutoRefresh();
   autoRefreshTimer = setInterval(() => {
-    const activeCards = allCards.filter(c => c.status === 'listed');
-    if (activeCards.length > 0) {
-      fetchLiveData(activeCards);
+    const cardsWithListingId = allCards.filter(c => c.ebayListingId);
+    if (cardsWithListingId.length > 0) {
+      fetchLiveData(cardsWithListingId);
     }
   }, 5 * 60 * 1000); // 5 minutes
 }
