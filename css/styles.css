@@ -763,6 +763,10 @@ body {
   font-size: 11px;
   color: var(--gray-500);
 }
+.listing-bid-count.has-bids {
+  color: #34d399;
+  font-weight: 600;
+}
 
 .listing-countdown {
   font-size: 11px;

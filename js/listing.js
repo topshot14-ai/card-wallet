@@ -404,7 +404,8 @@ function render() {
 
     // Bid count (only for active auctions)
     const bidCount = live?.bidCount || 0;
-    const bidHtml = isActive && isAuction ? `<span class="listing-bid-count">${bidCount} bid${bidCount !== 1 ? 's' : ''}</span>` : '';
+    const bidClass = bidCount > 0 ? 'listing-bid-count has-bids' : 'listing-bid-count';
+    const bidHtml = isActive && isAuction ? `<span class="${bidClass}">${bidCount} bid${bidCount !== 1 ? 's' : ''}</span>` : '';
 
     // Countdown (only for active)
     let countdownHtml = '';
